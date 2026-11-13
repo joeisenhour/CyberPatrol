@@ -1,4 +1,4 @@
-# Moon Patrol (Cybertruck edition)
+# Cyber Patrol
 
 A single-file HTML5 tribute to the classic arcade game Moon Patrol with original pixel art. Open `index.html` in a browser.
 
