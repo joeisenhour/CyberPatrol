@@ -80,7 +80,9 @@
   const GROUND_Y = 168;
   const CP_SPACING = 2200;
   const CP_COUNT = 5; // numbered checkpoints 1-5; the level ends at 5
-  const HEAD_AFTER = Math.round(CP_SPACING * 0.4); // face appears once, early in section 1
+  // Photographic face appears twice per level, spaced through the 5 checkpoints:
+  // once around checkpoint 2 and once around checkpoint 4. Ships the rest of the time.
+  const HEAD_AT = [Math.round(CP_SPACING * 1.5), Math.round(CP_SPACING * 3.5)];
   const MAX_LIVES = 3;
 
   /* -------- AUDIO -------- */
@@ -97,8 +99,8 @@
   // 1.0 would be the original tune. These values make the game ~10% easier:
   // fewer/slower enemies and shots, more space between obstacles, more
   // checkpoint time, slightly more forgiving hurt boxes and slightly larger
-  // shot targets. Jump physics, art, levels, and the once-per-level face
-  // are unchanged.
+  // shot targets. Jump physics, art, levels, and the twice-per-level face
+  // (around checkpoints 2 and 4) are unchanged.
   const DIFFICULTY = {
     ENEMY_DENSITY: 0.90,     // wave cooldown / extra-ship chance (lower = fewer)
     ENEMY_SPEED: 0.90,       // airborne enemy horizontal speed
@@ -613,7 +615,7 @@
 
   window.__cyberTest = {
     snapshot() {
-      return { mode, level, dest: destPoint, worldX, timeLeft, heads: ufos.filter((u) => u.kind === "head" && u.live).length, headSpawned };
+      return { mode, level, dest: destPoint, worldX, timeLeft, heads: ufos.filter((u) => u.kind === "head" && u.live).length, headSpawned: headsSpawned, headsSpawned };
     },
     approachCheckpoint(n) {
       const c = checkpoints.find((cp) => cp.n === n);
@@ -629,10 +631,12 @@
       return true;
     },
     forceHeadWave() {
-      worldX = Math.max(worldX, HEAD_AFTER + 1);
+      if (headsSpawned >= HEAD_AT.length) return false;
+      worldX = Math.max(worldX, HEAD_AT[headsSpawned] + 1);
       ufoSpawnCd = 0;
       player.invuln = 999;
       generateUntil(worldX + IW + 420);
+      return true;
     },
     checkpoints() { return checkpoints.map((c) => ({ n: c.n, x: c.x, got: c.got })); }
   };
@@ -802,7 +806,7 @@
   let flash = 0;
   let hintTimer = 0;
   let thrustHintTimer = 0;
-  let headSpawned = false;
+  let headsSpawned = 0;
   let level = 1;
   let wantedLevel = 1;
   let introTimer = 0;
@@ -971,7 +975,7 @@
     shake = 0;
     hintTimer = 240;
     thrustHintTimer = (level === 2 ? 240 : 0);
-    headSpawned = false;
+    headsSpawned = 0;
     player.sx = 72;
     player.speed = player.defaultSpeed;
     player.jumpV = 0;
@@ -2493,13 +2497,14 @@
       }
     }
 
-    // ufo waves — ships by default; the photo head appears once per level
+    // ufo waves — ships by default; the photo head appears twice per level
+    // (around checkpoints 2 and 4)
     ufoSpawnCd--;
     if (ufoSpawnCd <= 0 && worldX > 500) {
       const d = difficulty();
-      if (!headSpawned && worldX > HEAD_AFTER) {
+      if (headsSpawned < HEAD_AT.length && worldX > HEAD_AT[headsSpawned]) {
         spawnUfo(0, "head");
-        headSpawned = true;
+        headsSpawned++;
       } else {
         spawnUfo(0);
       }
@@ -3073,7 +3078,7 @@
     u.vx = -0.35;
     u.bombCd = 10000;
     player.invuln = 999;
-    headSpawned = true;
+    headsSpawned = HEAD_AT.length;
     bombs.push({
       x: u.x + u.w * HEAD_MOUTH_X,
       y: 84,

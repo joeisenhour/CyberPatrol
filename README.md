@@ -1,6 +1,10 @@
 # CyberPatrol
 
-A single-file HTML5 tribute to the classic arcade game Moon Patrol with original pixel art. Open `index.html` in a browser.
+A single-file HTML5 tribute to the classic arcade game Moon Patrol with original pixel art.
+
+**Play it online:** [https://joeisenhour.github.io/CyberPatrol/](https://joeisenhour.github.io/CyberPatrol/)
+
+Or open `index.html` in a browser.
 
 - Two levels and an ending at the Starship.
 
