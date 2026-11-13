@@ -80,9 +80,36 @@
   const GROUND_Y = 168;
   const CP_SPACING = 2200;
   const MAX_LIVES = 3;
-  const L1_TIME = 52;
-  const L2_TIME = 51;
-  const L2_THRUST = 17; // 1/3 of the level-2 time budget (51 s)
+
+  /* -------- AUDIO -------- */
+  // Master was 0.2; 0.42 is just over 2x linear (~+6.4 dB, about 2x perceived).
+  // Music bus stays at 0.55 so the soundtrack remains quieter than SFX.
+  // A compressor-limiter on the output catches stacked peaks.
+  const AUDIO = {
+    MASTER: 0.42,
+    MUSIC_BUS: 0.55
+  };
+
+  /* -------- DIFFICULTY -------- */
+  // 1.0 would be the original tune. These values make the game ~10% easier:
+  // fewer/slower enemies and shots, more space between obstacles, more
+  // checkpoint time, slightly more forgiving hurt boxes and slightly larger
+  // shot targets. Jump physics, art, levels, and the once-per-level face
+  // are unchanged.
+  const DIFFICULTY = {
+    ENEMY_DENSITY: 0.90,     // wave cooldown / extra-ship chance (lower = fewer)
+    ENEMY_SPEED: 0.90,       // airborne enemy horizontal speed
+    SHOT_RATE: 0.90,         // enemy fire frequency (lower = slower)
+    SHOT_SPEED: 0.90,        // bomb / fireball speed and fall gravity
+    OBSTACLE_SPACING: 1.10,  // gap between ground obstacles
+    TIMER: 1.10,             // checkpoint time budget
+    HITBOX_HURT: 0.90,       // player hurt-box size (lower = more forgiving)
+    HITBOX_TARGET: 1.10      // enemy / rock / bomb target size for player shots
+  };
+
+  const L1_TIME = Math.round(52 * DIFFICULTY.TIMER); // was 52
+  const L2_TIME = Math.round(51 * DIFFICULTY.TIMER); // was 51
+  const L2_THRUST = Math.round(L2_TIME / 3); // stays ~1/3 of the level-2 budget (was 17)
   const START_TIME = L1_TIME;
   const JUMP_V0 = -2.45;
   const GRAVITY = 0.05;
@@ -299,10 +326,17 @@
         if (!AC) return false;
         this.ctx = new AC();
         this.master = this.ctx.createGain();
-        this.master.gain.value = 0.2;
-        this.master.connect(this.ctx.destination);
+        this.master.gain.value = AUDIO.MASTER;
+        this.limiter = this.ctx.createDynamicsCompressor();
+        this.limiter.threshold.value = -8;
+        this.limiter.knee.value = 4;
+        this.limiter.ratio.value = 20;
+        this.limiter.attack.value = 0.003;
+        this.limiter.release.value = 0.15;
+        this.master.connect(this.limiter);
+        this.limiter.connect(this.ctx.destination);
         this.musicBus = this.ctx.createGain();
-        this.musicBus.gain.value = 0.55;
+        this.musicBus.gain.value = AUDIO.MUSIC_BUS;
         this.musicBus.connect(this.master);
       }
       if (this.ctx.state === "suspended") this.ctx.resume();
@@ -311,7 +345,7 @@
     setMute(m) {
       this.muted = m;
       if (this.master && this.ctx) {
-        this.master.gain.setTargetAtTime(m ? 0 : 0.2, this.ctx.currentTime, 0.02);
+        this.master.gain.setTargetAtTime(m ? 0 : AUDIO.MASTER, this.ctx.currentTime, 0.02);
       }
     },
     toggle() { this.setMute(!this.muted); },
@@ -395,7 +429,7 @@
       if (this.musicBus && this.ctx) {
         const t = this.ctx.currentTime;
         this.musicBus.gain.cancelScheduledValues(t);
-        this.musicBus.gain.setTargetAtTime(0.55, t, 0.05);
+        this.musicBus.gain.setTargetAtTime(AUDIO.MUSIC_BUS, t, 0.05);
       }
     },
     stopMusic() {
@@ -448,7 +482,7 @@
         return;
       }
       if (this.musicBus && this.musicBus.gain.value < 0.2) {
-        this.musicBus.gain.setTargetAtTime(0.55, this.ctx.currentTime, 0.05);
+        this.musicBus.gain.setTargetAtTime(AUDIO.MUSIC_BUS, this.ctx.currentTime, 0.05);
       }
       const now = this.ctx.currentTime;
       if (!this.musicTime || this.musicTime < now - 0.2) this.musicTime = now;
@@ -744,14 +778,14 @@
     ufos.push({
       x: worldX + IW + 10,
       y: 28 + Math.random() * 50,
-      vx: -(0.6 + Math.random() * 0.5 + d * 0.3),
+      vx: -(0.6 + Math.random() * 0.5 + d * 0.3) * DIFFICULTY.ENEMY_SPEED,
       vy: 0,
       phase: Math.random() * Math.PI * 2,
       pattern: pattern || 0,
       kind: isHead ? "head" : "ship",
       hp: 1,
       live: true,
-      bombCd: 50 + Math.random() * 80,
+      bombCd: (50 + Math.random() * 80) / DIFFICULTY.SHOT_RATE,
       w: isHead ? HEAD_W : 16,
       h: isHead ? HEAD_H : 8
     });
@@ -825,7 +859,7 @@
         genX += 40;
         continue;
       }
-      const gap = 70 + Math.random() * (110 - d * 40) + 20;
+      const gap = (70 + Math.random() * (110 - d * 40) + 20) * DIFFICULTY.OBSTACLE_SPACING;
       genX += gap;
       if (genX > target + 80) break;
       if (genX + 80 > nextCp && genX < nextCp + 80) continue;
@@ -833,23 +867,23 @@
       if (r < 0.34) {
         const w = 28 + Math.random() * (18 + d * 22);
         spawnCrater(genX, w, 11 + Math.random() * 9);
-        genX += w * 0.5 + 10;
+        genX += (w * 0.5 + 10) * DIFFICULTY.OBSTACLE_SPACING;
       } else if (r < 0.68) {
         spawnRock(genX, Math.random() < d * 0.5 ? 1 : 0);
         if (d > 0.25 && Math.random() < 0.35) {
           spawnRock(genX + 18 + Math.random() * 16, 0);
         }
-        genX += 16;
+        genX += 16 * DIFFICULTY.OBSTACLE_SPACING;
       } else if (r < 0.86) {
         spawnRock(genX, 0);
         const w = 26 + Math.random() * 18;
         spawnCrater(genX + 36 + Math.random() * 20, w, 10 + Math.random() * 8);
-        genX += 70;
+        genX += 70 * DIFFICULTY.OBSTACLE_SPACING;
       } else {
         const w1 = 24 + Math.random() * 14;
         spawnCrater(genX, w1, 10 + Math.random() * 7);
         if (d > 0.2) spawnCrater(genX + w1 * 0.5 + 28 + Math.random() * 24, 26 + Math.random() * 16, 10 + Math.random() * 8);
-        genX += 80;
+        genX += 80 * DIFFICULTY.OBSTACLE_SPACING;
       }
     }
   }
@@ -889,6 +923,13 @@
   const ROADSTER_WR = 6;
 
   function vehW() { return level === 2 ? ROADSTER_W : TRUCK_W; }
+  // Shrink the player's hurt box by (1 - HITBOX_HURT) on each side of the original insets.
+  function hurtRangeX(insetL, insetR) {
+    const px = worldX + player.sx;
+    const inner = Math.max(0, vehW() - insetL - insetR);
+    const shrink = inner * (1 - DIFFICULTY.HITBOX_HURT) * 0.5;
+    return [px + insetL + shrink, px + vehW() - insetR - shrink];
+  }
   function vehCX() { return level === 2 ? ROADSTER_CX : TRUCK_CX; }
   function vehFront() { return level === 2 ? ROADSTER_FRONT : FRONT_WX; }
   function vehRear() { return level === 2 ? ROADSTER_REAR : REAR_WX; }
@@ -2056,7 +2097,7 @@
   }
 
   /* ---------------- gameplay ---------------- */
-  let ufoSpawnCd = 200;
+  let ufoSpawnCd = 200 / DIFFICULTY.ENEMY_DENSITY;
 
   function fireShots() {
     if (player.fireCd > 0 || !player.live) return;
@@ -2128,7 +2169,7 @@
     player.onGround = true;
     player.invuln = 120;
     player.frontS = player.rearS = 0;
-    if (timeLeft < 18) timeLeft = 22;
+    if (timeLeft < 18 * DIFFICULTY.TIMER) timeLeft = 22 * DIFFICULTY.TIMER;
     // skip out of a crater if needed
     const wx = worldX + player.sx + vehCX();
     if (groundYAt(wx) > GROUND_Y + 3 || groundYAt(wx + 12) > GROUND_Y + 3 || groundYAt(wx - 12) > GROUND_Y + 3) {
@@ -2308,9 +2349,9 @@
       } else {
         spawnUfo(0);
       }
-      if (d > 0.35 && Math.random() < 0.4) spawnUfo(1);
-      if (level === 2 && Math.random() < 0.45) spawnUfo(1);
-      ufoSpawnCd = (level === 2 ? 140 : 180) - d * 70 + Math.random() * 70;
+      if (d > 0.35 && Math.random() < 0.4 * DIFFICULTY.ENEMY_DENSITY) spawnUfo(1);
+      if (level === 2 && Math.random() < 0.45 * DIFFICULTY.ENEMY_DENSITY) spawnUfo(1);
+      ufoSpawnCd = ((level === 2 ? 140 : 180) - d * 70 + Math.random() * 70) / DIFFICULTY.ENEMY_DENSITY;
     }
 
     // bullets
@@ -2337,18 +2378,18 @@
           bombs.push({
             x: u.x + u.w * HEAD_MOUTH_X,
             y: u.y + u.h * HEAD_MOUTH_Y,
-            vx: -0.1, vy: 0.4, live: true, kind: "fireball"
+            vx: -0.1 * DIFFICULTY.SHOT_SPEED, vy: 0.4 * DIFFICULTY.SHOT_SPEED, live: true, kind: "fireball"
           });
         } else {
-          bombs.push({ x: u.x + 8, y: u.y + 6, vx: -0.1, vy: 0.4, live: true, kind: "bomb" });
+          bombs.push({ x: u.x + 8, y: u.y + 6, vx: -0.1 * DIFFICULTY.SHOT_SPEED, vy: 0.4 * DIFFICULTY.SHOT_SPEED, live: true, kind: "bomb" });
         }
-        u.bombCd = 70 + Math.random() * 90 - difficulty() * 20;
+        u.bombCd = (70 + Math.random() * 90 - difficulty() * 20) / DIFFICULTY.SHOT_RATE;
       }
       // collide bullets
       for (let j = 0; j < bullets.length; j++) {
         const b = bullets[j];
         if (!b.live) continue;
-        if (b.x > u.x + 1 && b.x < u.x + u.w - 1 && b.y > u.y + 1 && b.y < u.y + u.h - 1) {
+        if (b.x > u.x + 1 - u.w * (DIFFICULTY.HITBOX_TARGET - 1) && b.x < u.x + u.w - 1 + u.w * (DIFFICULTY.HITBOX_TARGET - 1) && b.y > u.y + 1 - u.h * (DIFFICULTY.HITBOX_TARGET - 1) && b.y < u.y + u.h - 1 + u.h * (DIFFICULTY.HITBOX_TARGET - 1)) {
           b.live = false;
           hitUfo(u);
           break;
@@ -2360,14 +2401,14 @@
     for (let i = 0; i < bombs.length; i++) {
       const b = bombs[i];
       if (!b.live) continue;
-      b.vy += 0.06;
+      b.vy += 0.06 * DIFFICULTY.SHOT_SPEED;
       b.x += b.vx;
       b.y += b.vy;
       // shot down
       for (let j = 0; j < bullets.length; j++) {
         const s = bullets[j];
         if (!s.live) continue;
-        if (Math.abs(s.x - b.x) < 4 && Math.abs(s.y - b.y) < 5) {
+        if (Math.abs(s.x - b.x) < 4 * DIFFICULTY.HITBOX_TARGET && Math.abs(s.y - b.y) < 5 * DIFFICULTY.HITBOX_TARGET) {
           s.live = false;
           b.live = false;
           score += 200;
@@ -2387,7 +2428,7 @@
       for (let j = 0; j < bullets.length; j++) {
         const b = bullets[j];
         if (!b.live || b.kind === 1) continue; // vertical shots usually miss ground rocks; allow if low
-        if (b.x > r.x - 1 && b.x < r.x + r.w + 1 && b.y >= GROUND_Y - r.h - 2 && b.y < GROUND_Y + 2) {
+        if (b.x > r.x - 1 - r.w * (DIFFICULTY.HITBOX_TARGET - 1) && b.x < r.x + r.w + 1 + r.w * (DIFFICULTY.HITBOX_TARGET - 1) && b.y >= GROUND_Y - r.h - 2 - r.h * (DIFFICULTY.HITBOX_TARGET - 1) && b.y < GROUND_Y + 2) {
           b.live = false;
           hitRock(r);
           break;
@@ -2417,9 +2458,10 @@
         const gyM = groundYAt(mid);
         const gyF = groundYAt(fw);
         const gyR = groundYAt(rw);
-        if (gyM > GROUND_Y + 5 && gyF > GROUND_Y + 4 && gyR > GROUND_Y + 4) {
+        const cEase = 1 / DIFFICULTY.HITBOX_HURT;
+        if (gyM > GROUND_Y + 5 * cEase && gyF > GROUND_Y + 4 * cEase && gyR > GROUND_Y + 4 * cEase) {
           killPlayer("crater");
-        } else if (player.air < 1 && (gyM > GROUND_Y + 7)) {
+        } else if (player.air < 1 && (gyM > GROUND_Y + 7 * cEase)) {
           killPlayer("crater");
         }
       }
@@ -2427,8 +2469,8 @@
       for (let i = 0; i < rocks.length; i++) {
         const r = rocks[i];
         if (!r.live) continue;
-        const px = worldX + player.sx;
-        if (px + 6 < r.x + r.w && px + vehW() - 4 > r.x && feet > GROUND_Y - r.h + 1) {
+        const [rx0, rx1] = hurtRangeX(6, 4);
+        if (rx0 < r.x + r.w && rx1 > r.x && feet > GROUND_Y - r.h * DIFFICULTY.HITBOX_HURT + 1) {
           killPlayer("rock");
           r.live = false;
           burst(r.x + 4, GROUND_Y - 4, C.rock[3], 8, 2, 16);
@@ -2439,8 +2481,8 @@
       for (let i = 0; i < bombs.length; i++) {
         const b = bombs[i];
         if (!b.live) continue;
-        const px = worldX + player.sx;
-        if (b.x > px + 4 && b.x < px + vehW() - 4 && b.y > feet - 28 && b.y < feet + 2) {
+        const [bx0, bx1] = hurtRangeX(4, 4);
+        if (b.x > bx0 && b.x < bx1 && b.y > feet - 28 * DIFFICULTY.HITBOX_HURT && b.y < feet + 2 * DIFFICULTY.HITBOX_HURT) {
           b.live = false;
           killPlayer("bomb");
           burst(b.x, b.y, C.warning, 10, 2, 16);
@@ -2451,9 +2493,9 @@
       for (let i = 0; i < ufos.length; i++) {
         const u = ufos[i];
         if (!u.live) continue;
-        const px = worldX + player.sx;
+        const [ux0, ux1] = hurtRangeX(6, 6);
         const py = feet - 16;
-        if (u.x + u.w > px + 6 && u.x < px + vehW() - 6 && u.y + u.h > py - 10 && u.y < py + 8) {
+        if (u.x + u.w > ux0 && u.x < ux1 && u.y + u.h > py - 10 * DIFFICULTY.HITBOX_HURT && u.y < py + 8 * DIFFICULTY.HITBOX_HURT) {
           hitUfo(u);
           killPlayer("ufo");
           break;
