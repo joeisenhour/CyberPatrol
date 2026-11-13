@@ -371,14 +371,27 @@
   const thrustSet = new Set(["t"]); // alias for the Up thruster toggle
 
   function keyName(e) {
+    // Canonicalize so ArrowUp and the legacy "Up" value (and keyup/repeat
+    // pairs that mix them) count as one key. Otherwise latch would fire a
+    // second jumpPress and cut Level 2 thrusters mid-rise — looking like a jump.
+    const code = e.code || "";
+    if (code === "ArrowUp" || code === "Up") return "arrowup";
+    if (code === "ArrowDown" || code === "Down") return "arrowdown";
+    if (code === "ArrowLeft" || code === "Left") return "arrowleft";
+    if (code === "ArrowRight" || code === "Right") return "arrowright";
+    if (code === "Space") return " ";
     const k = (e.key || "").toLowerCase();
-    if (k === " ") return " ";
+    if (k === " " || k === "spacebar" || k === "space") return " ";
+    if (k === "up") return "arrowup";
+    if (k === "down") return "arrowdown";
+    if (k === "left") return "arrowleft";
+    if (k === "right") return "arrowright";
     return k;
   }
   function unlockAudio() { if (typeof SFX !== "undefined") SFX.unlock(); }
   window.addEventListener("keydown", (e) => {
     const k = keyName(e);
-    if (!keys[k]) latch.add(k);
+    if (!e.repeat && !keys[k]) latch.add(k);
     keys[k] = true;
     unlockAudio();
     if (["arrowup","arrowdown","arrowleft","arrowright"," ","space"].includes(k) || fireSet.has(k) || startSet.has(k)) e.preventDefault();
@@ -454,21 +467,23 @@
     input.slow = anyDown(slowSet) || pads.slow;
     input.fast = anyDown(fastSet) || pads.fast;
     input.jump = jumpDown;
-    input.jumpPress = (jumpDown && !prevJump) || anyLatch(jumpSet) || phoneJumpLatch;
+    // Group-edge only: a second alias (ArrowUp then legacy "Up") must not
+    // count as a fresh press while the jump group is already held.
+    input.jumpPress = (!prevJump && (jumpDown || anyLatch(jumpSet))) || phoneJumpLatch;
     input.fire = fireDown || phoneFireLatch;
-    input.firePress = (fireDown && !prevFire) || anyLatch(fireSet) || phoneFireLatch;
-    input.startPress = (startDown && !prevStart) || anyLatch(startSet) || pointerStartLatch;
+    input.firePress = (!prevFire && (fireDown || anyLatch(fireSet))) || phoneFireLatch;
+    input.startPress = (!prevStart && (startDown || anyLatch(startSet))) || pointerStartLatch;
     pointerStartLatch = false;
     phoneJumpLatch = false;
     phoneFireLatch = false;
-    input.mutePress = (muteDown && !prevMute) || latch.has("m");
-    input.pausePress = (pauseDown && !prevPause) || latch.has("p") || latch.has("escape");
+    input.mutePress = !prevMute && (muteDown || latch.has("m"));
+    input.pausePress = !prevPause && (pauseDown || latch.has("p") || latch.has("escape"));
     const downDown = anyDown(downSet) || pads.thrust;
-    input.downPress = (downDown && !prevDown) || anyLatch(downSet);
+    input.downPress = !prevDown && (downDown || anyLatch(downSet));
     const thrustDown = anyDown(thrustSet);
-    input.thrustPress = (thrustDown && !prevThrust) || anyLatch(thrustSet);
-    input.level2Press = (!!keys["2"] && !prevLevel2) || latch.has("2");
-    input.endingPress = ((!!keys["e"] || !!keys["E"]) && !prevEnding) || latch.has("e");
+    input.thrustPress = !prevThrust && (thrustDown || anyLatch(thrustSet));
+    input.level2Press = !prevLevel2 && (!!keys["2"] || latch.has("2"));
+    input.endingPress = !prevEnding && (!!(keys["e"] || keys["E"]) || latch.has("e"));
     prevJump = jumpDown;
     prevFire = fireDown;
     prevStart = startDown;
@@ -772,7 +787,7 @@
         heads: ufos.filter((u) => u.kind === "head" && u.live).length,
         headSpawned: headsSpawned, headsSpawned,
         air: player.air, onGround: player.onGround, jumpV: player.jumpV,
-        live: player.live, thrustOn, thrustTime, fuelEmptyHintTimer,
+        live: player.live, thrustOn, thrustTime, fuelEmptyHintTimer, pendingThrustEngage,
         shots: bullets.filter((b) => b.live).length, speed: player.speed
       };
     },
@@ -1007,6 +1022,7 @@
   let introTimer = 0;
   let thrustOn = false;
   let thrustTime = 0;
+  let pendingThrustEngage = false;
   let endingTimer = 0;
   let endingCarX = -60;
   let endingParked = false;
@@ -1162,6 +1178,7 @@
     destPoint = 1;
     thrustOn = false;
     thrustTime = (level === 2 ? L2_THRUST : 0);
+    pendingThrustEngage = false;
     lastCheckpoint = 0;
     genX = 280;
     testFreeze = false;
@@ -2560,17 +2577,25 @@
     // T stays a toggle alias. When fuel is empty, Up is a normal jump.
     const canThrust = level === 2 && thrustTime > 0 && player.live;
     if (canThrust) {
+      // pendingThrustEngage: Up was held or used to skip the L2 intro, so
+      // the edge was consumed before playing started. Engage once, do not
+      // treat that same hold as a later toggle-off or a jump.
       const toggleThrust = input.jumpPress || input.thrustPress;
-      if (toggleThrust && !thrustOn) {
+      if ((toggleThrust || pendingThrustEngage) && !thrustOn) {
         thrustOn = true;
+        pendingThrustEngage = false;
         thrustHintTimer = 0;
         if (player.onGround) player.jumpV = JUMP_V0;
         if (typeof SFX.thrust === "function") SFX.thrust();
       } else if (thrustOn && (toggleThrust || input.downPress)) {
         thrustOn = false;
+        pendingThrustEngage = false;
         if (player.air > 0) player.jumpV = Math.max(player.jumpV, 0.15);
+      } else {
+        pendingThrustEngage = false;
       }
     } else if (input.jumpPress && player.onGround && player.live) {
+      pendingThrustEngage = false;
       player.jumpV = JUMP_V0;
       player.onGround = false;
       SFX.jump();
@@ -3131,6 +3156,7 @@
     resetCourse(!!keepScore);
     thrustOn = false;
     thrustTime = (level === 2 ? L2_THRUST : 0);
+    pendingThrustEngage = false;
     hintTimer = 240;
     // Always show the Level 2 intro (Roadster reveal), including ?level=2 / key 2.
     if (level === 2) {
@@ -3193,6 +3219,11 @@
       if (introTimer <= 0 || input.startPress || input.jumpPress) {
         player.speed = player.defaultSpeed;
         mode = "playing";
+        // Up/W/Space already down (or this press skipped the intro): arm
+        // thrusters for the first playing frame so the hold is not eaten.
+        if (level === 2 && thrustTime > 0 && (input.jump || input.jumpPress)) {
+          pendingThrustEngage = true;
+        }
       }
     } else if (mode === "playing") {
       if (input.pausePress) { resumeMode = mode; mode = "pause"; }
