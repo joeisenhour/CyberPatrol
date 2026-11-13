@@ -1,0 +1,48 @@
+Cybertruck side-elevation measurements
+=======================================
+
+Primary reference (authoritative outline):
+  Page: https://www.dimensions.com/element/tesla-cybertruck
+  SVG:  https://cdn.prod.website-files.com/5b44edefca321a1e2d0c2aa6/5f45a0bed5243d00d558c6c9_Dimensions-Transport-Tesla-Cybertruck-Dimensions.svg
+  Local: ref/cyber-dimensions.svg, ref/side_elev.png
+
+ORIENTATION (important):
+  The Dimensions.com side elevation already FACES RIGHT.
+  LEFT  = REAR  = tall, nearly vertical tailgate + bed + rear bumper.
+  RIGHT = FRONT = pointed nose, windshield, light-bar face.
+  Do not mirror this drawing to make a right-facing sprite.
+
+  (A previous write-up swapped front/rear. The 44%-from-front peak
+  figure was correct once the right-hand end is treated as the nose.)
+
+Measured on the side view (pink ink), body bbox:
+  Length L = 1179 px
+  Height H = 374 px  (roof peak to tire contact)
+  L/H      = 3.152   (tesla.com production 223.7" / 70.6" = 3.169;
+                      drawing labels 231.7" / 75" disagree with the ink)
+
+  Peak x: 56% of L from the REAR (left), 44% of L from the FRONT (right).
+  Sail  (peak -> tailgate): 658 px run, drop 92 px, ~8.0°  — the LONG, SHALLOW plane.
+  Hood  (peak -> nose):     520 px run, drop 175 px, ~18.6° — the SHORT, STEEPER plane.
+  Tailgate top: 75% of H, nearly vertical.
+  Nose tip top: 53% of H (light bar); front face down to ~36% of H.
+  Character line: ~35% of H.
+  Rocker / ground clearance: ~16% of H.
+  Wheel diameter: ~16% of L  (~50% of H).
+  Wheelbase: ~64% of L  (149.9" / 231.7" labeled, 149.9" / 223.7" production).
+  Front overhang (right): ~15.5% of L.
+  Rear overhang  (left):  ~20.1% of L.
+  C-pillar / cab-bed break: ~35% from the rear (bed is the last third).
+  B-pillar: just behind the peak.
+  A-pillar: on the windshield, ~73% from the rear.
+
+Sprite:
+  104 px long × 33 px to the peak (104/33 = 3.15).
+  Peak at x=58.  Wheels r=8 (17 px diameter, 16.3% of L) at x=21 and x=88.
+  Outline derived from the elevation scaled to this grid; shading is original
+  (stainless greys, black cladding, light bar). The photo/SVG is not embedded.
+
+Secondary photo (not used for the outline):
+  Wikimedia, 2024 Tesla Cybertruck Foundation Series IMG 0629.jpg
+  by Alexander-93 (Alexander Migl), CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:2024_Tesla_Cybertruck_Foundation_Series_IMG_0629.jpg

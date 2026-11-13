@@ -1,0 +1,74 @@
+Tesla Roadster (next-gen) — side-profile measurements
+=====================================================
+
+Version used:
+  Official Ano White studio photographs from the Tesla Roadster
+  unveil, 15–16 October 2026, SpaceX McGregor, Texas (production
+  targeted 2028). This is the newly unveiled wedge / “cyberfied”
+  design (SR-71 / F-35 inspired), NOT the 2017 red concept.
+
+  No dimensioned orthographic elevation was published. The primary
+  reference is Tesla’s official nearly side-on studio photograph
+  (doors closed), the closest true side profile available.
+
+Sources:
+  official-side-closed.jpg
+    https://img.numerama.com/www.numerama.com/wp-content/uploads/2026/10/tesla-roadster-2026-28.jpg
+    Tesla official photo, republished 16 Oct 2026 by Numerama.
+  official-side-closed-hires.jpg (same official photo, C/D gallery)
+    https://hips.hearstapps.com/hmg-prod/images/3a45c8e9-5245-45b2-b238-9f16c099f83c.jpg
+    https://www.caranddriver.com/photos/a74152579/tesla-roadster-revealed-exterior-gallery/
+  official-side-doors-open.jpg (detail only)
+    https://img.numerama.com/www.numerama.com/wp-content/uploads/2026/10/tesla-roadster-2026-27.jpg
+  Product page: https://www.tesla.com/roadster
+
+Photo (doors closed, nose on the LEFT in the official still):
+  Length L ≈ 1000 px (black front splitter to rear bumper)
+  Height H ≈ 256 px (roof peak to tire contact)
+  L/H      ≈ 3.91   (very low, long wedge — supercar proportions)
+  Peak: 50.8% of L from the front (almost mid-car, over the cabin)
+  Wheel diameter ≈ 166 px (16.6% of L, ~65% of H — large for a low body)
+  Wheelbase ≈ 599 px (59.9% of L)
+  Front overhang ≈ 12.9% of L
+  Rear overhang  ≈ 10.6% of L
+  Ground clearance is very low (splitter / rocker close to the ground)
+  Nose: sharp, nearly vertical hidden-light-bar face, black splitter shelf
+  Canopy: long gold-glazed glass from behind the front axle to a C-pillar
+  Tail: Kamm cut, nearly vertical, thin red rear-light slash, black diffuser
+  Lower body: black skirt / rocker, rising slightly toward the rear
+  Wheels: 5 thin dark star-spokes, light rim, dark hub
+
+Sprite (game, facing RIGHT, photo flipped):
+  96 px long × 25 px to the peak (96/25 = 3.84, closest integer fit)
+  Peak at x=47 (49% from the rear)
+  Wheels r=8 (16 px Ø) at x=19 (rear) and x=76 (front)
+  Outline derived from the official photo scaled to this grid;
+  shading is original (Ano White, gold glass, black skirt, light bar).
+  The photograph is not embedded in the game.
+
+Alignment after the final sprite (facing right):
+  Roof MAE = 0.21 px over cabin and hood (x=2–90), 99% of those
+  columns within 1 px, versus the official photo scaled to 96 px long.
+  Wheels: photo maps to cx≈18.0 / 75.6, r≈8.0; sprite uses 19 / 76, r=8.
+  Wheelbase 57/96 = 59.4% (photo 59.9%). Front overhang 12.5% (photo 12.9%).
+  Rear overhang 11.5% (photo 10.6%) — slightly long at this grid.
+  Peak at x=47 is 51% from the front (photo 50.8%).
+  L/H sprite 96/25 = 3.84 vs photo 3.91 (closest integer fit; the sprite
+  is ~0.4 px taller when lengths are locked).
+  The official nearly-vertical light-bar face sits at about x=93; the
+  sprite carries a 2–3 px blunt face to x=96 so the light bar and
+  splitter still read at 96 px. No dimensioned elevation exists; all
+  ratios are from the official studio photograph, not a blueprint.
+
+Updated sprite (after size pass):
+  78 px long × 20 px to the peak (78/20 = 3.90, vs photo L/H ≈ 3.91)
+  Chosen to sit at ~4.3/5.7 of the 104 px Cybertruck (≈78.5 px).
+  Peak at x=38 (51% from the front; photo 50.8%).
+  Wheels r=6 (12 px Ø, 15.4% of L / 60% of H; photo 16.6% / ~65%, r≈6.5).
+  Wheel centers x=15 (rear) and x=61 (front). Wheelbase 46/78 = 59.0% (photo 59.9%).
+  Front overhang 11/78 = 14.1% (photo 12.9%); rear 9/78 = 11.5% (photo 10.6%).
+  Roof MAE = 0.25 px over cabin and hood (x=2–70), 100% of those columns within 1 px.
+  Glasshouse is a 3 px band at the cabin, tapering to a sharp rear point at x=24;
+  no heavy C-pillar. Official vertical face still sits near x=75.7; sprite face at x=76–78.
+  Hover apex is unchanged (JUMP_APEX = 26.4 px from jump physics, not sprite size).
+  Thrust timer unchanged (17 s = 1/3 of the 51 s level-2 budget).

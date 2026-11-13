@@ -1,0 +1,35 @@
+Ending scene references (photos are NOT embedded in the game; pixel art is original)
+
+Starship (Human Landing System, landed on legs — chosen because Super Heavy
+does not go to the lunar surface). Official dimensions: ~50 m tall, 9 m
+diameter (NASA). Stainless ogive-nosed cylinder, window band, NASA marking,
+black equatorial band, black engine skirt, four landing legs. No flaps
+(HLS configuration).
+
+  hls-moon-surface.jpg
+    NASA / SpaceX artist concept, “Starship HLS on the Moon for NASA Artemis”
+    https://images-assets.nasa.gov/image/11%2003%2024%20artemis%203%20on%20surface/11%2003%2024%20artemis%203%20on%20surface~large.jpg
+    Article: https://www.nasa.gov/directorates/esdmd/artemis-campaign-development-division/human-landing-system-program/nasa-spacex-illustrate-key-moments-of-artemis-lunar-lander-mission/
+    (20 Nov 2024)
+
+  hls-first-steps.jpg  (leg / elevator detail)
+    https://images-assets.nasa.gov/image/09%2024%2024%20First%20steps%20Axiom%20suits/09%2024%2024%20First%20steps%20Axiom%20suits~large.jpg
+
+  hls-raptors.jpg  (engine / descent burn concept)
+    https://images-assets.nasa.gov/image/11%2004%2024%20hls%202%20raptors/11%2004%2024%20hls%202%20raptors~large.jpg
+
+  SpaceX HLS update (30 Oct 2025): https://www.spacex.com/updates/starship-hls-timeline-2025
+  SpaceX Moon page: https://www.spacex.com/humanspaceflight/moon/
+
+Tesla Optimus (white/black Gen 2 — used for the pixel sprite):
+
+  optimus-gen2-teslarati.jpg
+    Official Tesla Gen 2 still, republished by Teslarati (12 Dec 2023)
+    https://www.teslarati.com/wp-content/uploads/2023/12/tesla-optimus-bot-gen-2-scaled.jpg
+    Article: https://www.teslarati.com/tesla-shows-off-optimus-gen-2-humanoid-robot-video/
+    Official video: https://www.youtube.com/watch?v=cpraXaw7dyc
+
+  optimus-gen1-exhibit.jpg  (proportion / stance detail only; earlier silver prototype)
+    Photo by Benjamin Ceci, 6 Sep 2023, public domain
+    https://commons.wikimedia.org/wiki/File:Optimus_Tesla.jpg
+    Height used: ~1.73 m (Tesla public figure).
