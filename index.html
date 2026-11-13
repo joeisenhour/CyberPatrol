@@ -842,7 +842,27 @@
       generateUntil(worldX + IW + 420);
       return true;
     },
-    checkpoints() { return checkpoints.map((c) => ({ n: c.n, x: c.x, got: c.got })); }
+    checkpoints() { return checkpoints.map((c) => ({ n: c.n, x: c.x, got: c.got })); },
+    heads() {
+      return ufos.filter((u) => u.kind === "head").map((u) => ({
+        live: u.live, x: u.x, y: u.y, w: u.w, h: u.h,
+        sx: u.x - worldX, shotsFired: u.shotsFired || 0,
+        enteredFrame: u.enteredFrame, bombCd: u.bombCd
+      }));
+    },
+    fireballs() {
+      return bombs.filter((b) => b.live && b.kind === "fireball").map((b) => ({
+        x: b.x, y: b.y, sx: b.x - worldX, sy: b.y
+      }));
+    },
+    headShots() { return headShotLog.slice(); },
+    clearHeadShots() { headShotLog.length = 0; },
+    obstaclesInRange(a, b) {
+      return {
+        rocks: rocks.filter((r) => r.x >= a && r.x <= b).map((r) => ({ x: r.x, w: r.w, h: r.h, kind: r.kind, live: r.live })),
+        craters: craters.filter((c) => c.x >= a && c.x <= b).map((c) => ({ x: c.x, w: c.w, depth: c.depth }))
+      };
+    }
   };
   window.__cyberAudio = {
     rms() { return SFX.getMusicRms ? SFX.getMusicRms() : 0; },
@@ -1049,7 +1069,9 @@
   };
 
   let testFreeze = false;
+  let finalStretchDone = false;
   let deathLog = [];
+  let headShotLog = [];
   let craters = [];
   let rocks = [];
   let ufos = [];
@@ -1144,8 +1166,31 @@
       live: true,
       bombCd: (50 + Math.random() * 80) / DIFFICULTY.SHOT_RATE,
       w: isHead ? HEAD_W : 16,
-      h: isHead ? HEAD_H : 8
+      h: isHead ? HEAD_H : 8,
+      shotsFired: 0,
+      enteredFrame: -1
     });
+  }
+  function dropEnemyShot(u) {
+    if (u.kind === "head") {
+      bombs.push({
+        x: u.x + u.w * HEAD_MOUTH_X,
+        y: u.y + u.h * HEAD_MOUTH_Y,
+        vx: -0.1 * DIFFICULTY.SHOT_SPEED,
+        vy: 0.4 * DIFFICULTY.SHOT_SPEED,
+        live: true,
+        kind: "fireball"
+      });
+      u.shotsFired = (u.shotsFired || 0) + 1;
+      headShotLog.push({
+        frame, level, shot: u.shotsFired,
+        enteredFrame: u.enteredFrame,
+        sinceEnter: u.enteredFrame >= 0 ? frame - u.enteredFrame : -1,
+        sx: u.x - worldX, x: u.x, y: u.y
+      });
+    } else {
+      bombs.push({ x: u.x + 8, y: u.y + 6, vx: -0.1 * DIFFICULTY.SHOT_SPEED, vy: 0.4 * DIFFICULTY.SHOT_SPEED, live: true, kind: "bomb" });
+    }
   }
   function spawnCheckpoint(x, n) {
     checkpoints.push({ x, n, got: false });
@@ -1182,7 +1227,9 @@
     lastCheckpoint = 0;
     genX = 280;
     testFreeze = false;
+    finalStretchDone = false;
     deathLog = [];
+    headShotLog = [];
     craters = [];
     rocks = [];
     ufos = [];
@@ -1212,7 +1259,7 @@
     generateUntil(worldX + IW + 400);
   }
 
-  function generateUntil(target) {
+  function generateRandomUntil(target) {
     const d = difficulty();
     while (genX < target) {
       const nextCp = Math.ceil((genX + 1) / CP_SPACING) * CP_SPACING;
@@ -1247,6 +1294,67 @@
         genX += 80 * DIFFICULTY.OBSTACLE_SPACING;
       }
     }
+  }
+
+  // Scripted CP4–5 packs. One jump clears each cluster at cruise or min speed.
+  // Only this stretch is replaced; earlier sections stay randomly generated.
+  // L2 uses smaller rocks and narrower craters so it is no harder than L1.
+  const FINAL_START = CP_SPACING * 4 + 220; // 9020
+  const FINAL_END = CP_SPACING * 5 - 220;   // 10780
+  const FINAL_PERIOD = 240;
+  const FINAL_CLUSTERS_L1 = [
+    [["rock", 0], ["gap", 12], ["rock", 0], ["gap", 16], ["crater", 28, 13]],
+    [["rock", 0], ["gap", 28], ["crater", 32, 14]],
+    [["rock", 1], ["gap", 16], ["rock", 0]],
+    [["rock", 0], ["gap", 14], ["rock", 0], ["gap", 16], ["crater", 28, 13]],
+    [["rock", 1], ["gap", 26], ["crater", 32, 14]],
+    [["rock", 0], ["gap", 16], ["rock", 0]],
+    [["rock", 0], ["gap", 28], ["crater", 30, 12]],
+    [["rock", 1]]
+  ];
+  const FINAL_CLUSTERS_L2 = [
+    [["rock", 0], ["gap", 14], ["rock", 0], ["gap", 18], ["crater", 26, 12]],
+    [["rock", 0], ["gap", 32], ["crater", 28, 12]],
+    [["rock", 0], ["gap", 20], ["rock", 0]],
+    [["rock", 0], ["gap", 16], ["rock", 0], ["gap", 18], ["crater", 26, 12]],
+    [["rock", 0], ["gap", 32], ["crater", 28, 13]],
+    [["rock", 0], ["gap", 20], ["rock", 0]],
+    [["rock", 0], ["gap", 32], ["crater", 26, 12]],
+    [["rock", 0]]
+  ];
+
+  function plantFinalStretch(finalStart, finalEnd) {
+    const clusters = (level === 2 ? FINAL_CLUSTERS_L2 : FINAL_CLUSTERS_L1);
+    for (let i = 0; i < clusters.length; i++) {
+      let x = finalStart + 40 + i * FINAL_PERIOD;
+      const parts = clusters[i];
+      for (let j = 0; j < parts.length; j++) {
+        const p = parts[j];
+        if (p[0] === "gap") x += p[1];
+        else if (p[0] === "rock") {
+          spawnRock(x, p[1]);
+          const r = rocks[rocks.length - 1];
+          x += r.w;
+        } else if (p[0] === "crater") {
+          const w = p[1], dpth = p[2];
+          spawnCrater(x + w * 0.5, w, dpth);
+          x += w;
+        }
+      }
+    }
+    genX = Math.max(genX, finalEnd);
+  }
+
+  function generateUntil(target) {
+    if (!finalStretchDone) {
+      generateRandomUntil(Math.min(target, FINAL_START));
+      if (target >= FINAL_START || genX >= FINAL_START - 1) {
+        if (genX < FINAL_START) generateRandomUntil(FINAL_START);
+        plantFinalStretch(FINAL_START, FINAL_END);
+        finalStretchDone = true;
+      }
+    }
+    if (genX < target) generateRandomUntil(target);
   }
 
   function cullWorld() {
@@ -2726,18 +2834,29 @@
       u.y += Math.sin(u.phase * 1.4) * 0.45;
       if (u.y < 16) u.y = 16;
       if (u.y > GROUND_Y - 50) u.y = GROUND_Y - 50;
-      u.bombCd--;
-      if (u.bombCd <= 0 && u.x < worldX + IW - 20 && u.x > worldX + 40) {
-        if (u.kind === "head") {
-          bombs.push({
-            x: u.x + u.w * HEAD_MOUTH_X,
-            y: u.y + u.h * HEAD_MOUTH_Y,
-            vx: -0.1 * DIFFICULTY.SHOT_SPEED, vy: 0.4 * DIFFICULTY.SHOT_SPEED, live: true, kind: "fireball"
-          });
+      // Face: at least one fireball (ideally two) while on screen. The first
+      // is forced ~0.9s after the head is fully visible, ignoring cooldown and
+      // x-range checks. The head cannot leave the left edge until it has fired.
+      if (u.kind === "head") {
+        const fullyOn = u.x >= worldX + 1 && u.x + u.w <= worldX + IW - 1;
+        if (fullyOn && (u.enteredFrame < 0)) u.enteredFrame = frame;
+        const need = 2;
+        if ((u.shotsFired || 0) < need && u.x < worldX + 8) u.x = worldX + 8;
+        const since = u.enteredFrame >= 0 ? frame - u.enteredFrame : -1;
+        const forceFirst = (u.shotsFired || 0) < 1 && since >= 54;
+        const forceSecond = (u.shotsFired || 0) === 1 && since >= 114;
+        if (forceFirst || forceSecond) {
+          dropEnemyShot(u);
+          u.bombCd = 90;
         } else {
-          bombs.push({ x: u.x + 8, y: u.y + 6, vx: -0.1 * DIFFICULTY.SHOT_SPEED, vy: 0.4 * DIFFICULTY.SHOT_SPEED, live: true, kind: "bomb" });
+          u.bombCd--;
         }
-        u.bombCd = (70 + Math.random() * 90 - difficulty() * 20) / DIFFICULTY.SHOT_RATE;
+      } else {
+        u.bombCd--;
+        if (u.bombCd <= 0 && u.x < worldX + IW - 20 && u.x > worldX + 40) {
+          dropEnemyShot(u);
+          u.bombCd = (70 + Math.random() * 90 - difficulty() * 20) / DIFFICULTY.SHOT_RATE;
+        }
       }
       // collide bullets
       for (let j = 0; j < bullets.length; j++) {
