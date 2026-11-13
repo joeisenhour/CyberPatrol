@@ -1167,15 +1167,16 @@
     const Y = (h) => baseY - h + by;
 
     // Main body, rear (left) to nose (right), with trapezoid arch cutouts so
-    // the already-drawn round wheels show through. Tailgate nearly vertical
-    // at h=25 (76% of peak); nose is a sharp wedge at h=18 (55%).
+    // the already-drawn round wheels show through. Tailgate is a single
+    // straight inward slant (top at the rear, angling forward to the
+    // underside). Nose is a short vertical face, then a straight chin
+    // slanting back down to the flat underside.
     const body = [
-      [sx + S(0),   Y(S(25))],   // tailgate top
+      [sx + S(0),   Y(S(25))],   // tailgate top (furthest back)
       [sx + S(58),  Y(S(33))],   // roof peak (56% from the rear)
       [sx + S(103), Y(S(18))],   // nose tip / light bar
-      [sx + S(103), Y(S(12))],   // front face bottom
-      [sx + S(101), Y(S(9))],    // chin
-      [sx + S(97),  Y(S(8))],    // underside = current nose/chin height
+      [sx + S(103), Y(S(13))],   // bottom of the short vertical front face
+      [sx + S(96),  Y(S(8))],    // straight chin slant down to the underside
       // front wheel-arch cutout (wider at the rocker)
       [sx + S(93),  Y(S(17))],
       [sx + S(80),  Y(S(17))],
@@ -1186,11 +1187,8 @@
       [sx + S(26),  Y(S(17))],
       [sx + S(15),  Y(S(17))],
       [sx + S(11),  Y(S(8))],
-      // rear bumper continues the same flat underside
-      [sx + S(8),   Y(S(8))],
-      [sx + S(3),   Y(S(8))],
-      [sx + S(1),   Y(S(9))],
-      [sx + S(0),   Y(S(10))]
+      // flat underside meets the inward-slanted tailgate (closes to S(0), Y(S(25)))
+      [sx + S(6),   Y(S(8))]
     ];
 
     // Ground shadow only under the chassis (between the wheels) so clearance shows
@@ -1244,8 +1242,8 @@
     fillPoly(g, R([
       [sx + S(92),  Y(S(17))],
       [sx + S(93),  Y(S(17))],
-      [sx + S(97),  Y(S(8))],
-      [sx + S(96),  Y(S(8))]
+      [sx + S(96),  Y(S(8))],
+      [sx + S(95),  Y(S(8))]
     ]), C.clad);
 
     // Windshield on the front slope, ahead of the A-pillar
@@ -1361,12 +1359,12 @@
       ]), muzzle ? C.lightHot : "#8ec8d8");
     }
 
-    // Rear light bar in the tailgate
+    // Rear light bar sits on the inward-slanted tailgate face
     fillPoly(g, R([
-      [sx + S(0),   Y(S(16))],
-      [sx + S(2),   Y(S(16))],
-      [sx + S(2),   Y(S(12))],
-      [sx + S(0),   Y(S(12))]
+      [sx + S(1),   Y(S(16))],
+      [sx + S(3),   Y(S(16))],
+      [sx + S(4),   Y(S(12))],
+      [sx + S(2),   Y(S(12))]
     ]), (frame % 20 < 12) ? C.tail : C.tailDim);
 
     // Side mirror at the A-pillar
