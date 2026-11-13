@@ -84,9 +84,10 @@
   const L2_TIME = 51;
   const L2_THRUST = 17; // 1/3 of the level-2 time budget (51 s)
   const START_TIME = L1_TIME;
-  const JUMP_V0 = -3.35;
-  const GRAVITY = 0.2;
-  const JUMP_APEX = 26.4;
+  const JUMP_V0 = -2.45;
+  const GRAVITY = 0.05;
+  const JUMP_APEX = 58.8; // discrete peak of JUMP_V0 / GRAVITY
+  const JUMP_CARRY = 0.9; // extra px/frame while airborne, so min-speed jumps still clear
   const HEAD_W = 19, HEAD_H = 26;
   const HEAD_MOUTH_X = 0.59, HEAD_MOUTH_Y = 0.69;
 
@@ -547,6 +548,8 @@
   let deathTimer = 0;
   let flash = 0;
   let hintTimer = 0;
+  let thrustHintTimer = 0;
+  let headSpawned = false;
   let level = 1;
   let wantedLevel = 1;
   let introTimer = 0;
@@ -654,8 +657,9 @@
     r.w = r.kind ? 14 : 10;
     r.h = r.kind ? 12 : 8;
   }
-  function spawnUfo(pattern) {
+  function spawnUfo(pattern, kind) {
     const d = difficulty();
+    const isHead = kind === "head";
     ufos.push({
       x: worldX + IW + 10,
       y: 28 + Math.random() * 50,
@@ -663,10 +667,12 @@
       vy: 0,
       phase: Math.random() * Math.PI * 2,
       pattern: pattern || 0,
+      kind: isHead ? "head" : "ship",
       hp: 1,
       live: true,
       bombCd: 50 + Math.random() * 80,
-      w: HEAD_W, h: HEAD_H
+      w: isHead ? HEAD_W : 16,
+      h: isHead ? HEAD_H : 8
     });
   }
   function spawnCheckpoint(x, letter) {
@@ -712,6 +718,8 @@
     flash = 0;
     shake = 0;
     hintTimer = 240;
+    thrustHintTimer = (level === 2 ? 240 : 0);
+    headSpawned = false;
     player.sx = 72;
     player.speed = player.defaultSpeed;
     player.jumpV = 0;
@@ -1911,8 +1919,17 @@
   }
 
   function drawUfo(g, u) {
-    // Photographic head is composited in render() after the 5x present
-    // so the face stays readable; hitbox/update still use u.x/u.y/u.w/u.h.
+    if (u.kind === "head") return; // photographic head is composited after the 5x present
+    const sx = Math.round(u.x - worldX);
+    const sy = Math.round(u.y);
+    if (sx < -20 || sx > IW + 20) return;
+    fillPoly(g, [[sx - 2, sy], [sx + 8, sy - 4], [sx + 18, sy], [sx + 16, sy + 3], [sx, sy + 3]], C.ufoDk);
+    fillPoly(g, [[sx, sy], [sx + 8, sy - 3], [sx + 16, sy], [sx + 14, sy + 2], [sx + 2, sy + 2]], C.ufo);
+    fillPoly(g, [[sx + 5, sy - 3], [sx + 8, sy - 6], [sx + 11, sy - 3]], C.ufoHi);
+    const lit = (frame + (u.phase * 10) | 0) % 8 < 5;
+    fillRect(g, sx + 3, sy + 1, 2, 1, lit ? C.ufoLite : C.ufoHi);
+    fillRect(g, sx + 7, sy + 1, 2, 1, !lit ? C.ufoLite : C.ufoDk);
+    fillRect(g, sx + 11, sy + 1, 2, 1, lit ? C.ufoLite : C.ufoHi);
   }
 
   function drawHeadsOnView() {
@@ -1922,7 +1939,7 @@
     vctx.imageSmoothingEnabled = true;
     for (let i = 0; i < ufos.length; i++) {
       const u = ufos[i];
-      if (!u.live) continue;
+      if (!u.live || u.kind !== "head") continue;
       const dx = (u.x - worldX + sceneOx) * s;
       const dy = (u.y + sceneOy) * s;
       const dw = u.w * s, dh = u.h * s;
@@ -2054,8 +2071,13 @@
     u.live = false;
     score += 500;
     const cx = u.x + (u.w >> 1), cy = u.y + (u.h >> 1);
-    burst(cx, cy, "#e8c8a8", 16, 2.4, 26);
-    burst(cx, cy, C.warning, 8, 1.8, 18);
+    if (u.kind === "head") {
+      burst(cx, cy, "#e8c8a8", 16, 2.4, 26);
+      burst(cx, cy, C.warning, 8, 1.8, 18);
+    } else {
+      burst(cx, cy, C.ufoHi, 16, 2.4, 26);
+      burst(cx, cy, C.ufoLite, 8, 1.8, 18);
+    }
     SFX.explode();
   }
 
@@ -2115,6 +2137,7 @@
     if (level === 2 && input.thrustPress && player.live) {
       if (!thrustOn && thrustTime > 0) {
         thrustOn = true;
+        thrustHintTimer = 0;
         if (player.onGround) player.jumpV = JUMP_V0;
         if (typeof SFX.thrust === "function") SFX.thrust();
       } else if (thrustOn) {
@@ -2153,7 +2176,7 @@
     if (player.muzzle > 0) player.muzzle--;
     if (player.invuln > 0) player.invuln--;
 
-    worldX += player.speed;
+    worldX += player.speed + (!player.onGround && player.live ? JUMP_CARRY : 0);
     generateUntil(worldX + IW + 420);
     score += 0; // distance scored below
     if (frame % 6 === 0) score += 1;
@@ -2193,11 +2216,16 @@
       }
     }
 
-    // ufo waves
+    // ufo waves — ships by default; the photo head appears once per level
     ufoSpawnCd--;
     if (ufoSpawnCd <= 0 && worldX > 500) {
       const d = difficulty();
-      spawnUfo(0);
+      if (!headSpawned && worldX > 900) {
+        spawnUfo(0, "head");
+        headSpawned = true;
+      } else {
+        spawnUfo(0);
+      }
       if (d > 0.35 && Math.random() < 0.4) spawnUfo(1);
       if (level === 2 && Math.random() < 0.45) spawnUfo(1);
       ufoSpawnCd = (level === 2 ? 140 : 180) - d * 70 + Math.random() * 70;
@@ -2223,11 +2251,15 @@
       if (u.y > GROUND_Y - 50) u.y = GROUND_Y - 50;
       u.bombCd--;
       if (u.bombCd <= 0 && u.x < worldX + IW - 20 && u.x > worldX + 40) {
-        bombs.push({
-          x: u.x + u.w * HEAD_MOUTH_X,
-          y: u.y + u.h * HEAD_MOUTH_Y,
-          vx: -0.1, vy: 0.4, live: true
-        });
+        if (u.kind === "head") {
+          bombs.push({
+            x: u.x + u.w * HEAD_MOUTH_X,
+            y: u.y + u.h * HEAD_MOUTH_Y,
+            vx: -0.1, vy: 0.4, live: true, kind: "fireball"
+          });
+        } else {
+          bombs.push({ x: u.x + 8, y: u.y + 6, vx: -0.1, vy: 0.4, live: true, kind: "bomb" });
+        }
         u.bombCd = 70 + Math.random() * 90 - difficulty() * 20;
       }
       // collide bullets
@@ -2349,6 +2381,7 @@
 
     cullWorld();
     if (hintTimer > 0) hintTimer--;
+    if (thrustHintTimer > 0) thrustHintTimer--;
     if (shake > 0) shake *= 0.85;
     if (flash > 0) flash--;
   }
@@ -2463,6 +2496,9 @@
         : "ARROWS SPEED   UP/SPACE JUMP   Z/X/F FIRE   M MUTE";
       drawTextShadow(g, hint, IW / 2, 22, C.hud, 1, "center");
     }
+    if (mode === "playing" && level === 2 && thrustHintTimer > 0 && (thrustHintTimer > 50 || (frame % 20 < 14))) {
+      drawTextShadow(g, "PRESS T FOR THRUSTERS", IW / 2, 44, C.warning, 1, "center", "#101018");
+    }
   }
 
   let sceneOx = 0, sceneOy = 0;
@@ -2493,11 +2529,17 @@
     for (let i = 0; i < checkpoints.length; i++) drawCheckpoint(g, checkpoints[i]);
     for (let i = 0; i < rocks.length; i++) drawRock(g, rocks[i]);
 
-    // fireballs
+    // bombs / fireballs
     for (let i = 0; i < bombs.length; i++) {
       const b = bombs[i];
       if (!b.live) continue;
-      drawFireball(g, b);
+      if (b.kind === "fireball") {
+        drawFireball(g, b);
+      } else {
+        const sx = Math.round(b.x - worldX), sy = Math.round(b.y);
+        fillRect(g, sx - 1, sy - 3, 3, 3, frame % 6 < 3 ? C.warning : C.danger);
+        fillRect(g, sx, sy, 1, 2, C.hud);
+      }
     }
 
     // bullets
@@ -2554,17 +2596,15 @@
     drawText(g, "CYBER PATROL", IW / 2, 27, C.light, 3, "center");
     drawTextShadow(g, "A MOON-PATROL STYLE ARCADE GAME", IW / 2, 54, C.accent, 1, "center");
 
-    fillRect(g, 70, 68, 244, 64, "rgba(0,0,0,0.45)");
+    fillRect(g, 70, 68, 244, 54, "rgba(0,0,0,0.45)");
     drawText(g, "LEFT / RIGHT   SPEED", IW / 2, 72, C.hud, 1, "center");
     drawText(g, "UP / SPACE     JUMP", IW / 2, 82, C.hud, 1, "center");
     drawText(g, "Z  X  F  CTRL  FIRE", IW / 2, 92, C.hud, 1, "center");
-    drawText(g, "T / DOWN        THRUST (LEVEL 2)", IW / 2, 102, C.hud, 1, "center");
-    drawText(g, "M MUTE    P PAUSE", IW / 2, 112, C.hudDim, 1, "center");
+    drawText(g, "M MUTE    P PAUSE", IW / 2, 102, C.hudDim, 1, "center");
 
     const enterCol = (frame % 40 < 20) ? C.warning : C.hud;
-    drawTextShadow(g, "PRESS ENTER", IW / 2, 136, enterCol, 2, "center");
-    drawText(g, "2 LEVELS:  CYBERTRUCK THEN ROADSTER", IW / 2, 188, C.hudDim, 1, "center");
-    drawText(g, "T TOGGLES COLD-GAS THRUSTERS ON LEVEL 2", IW / 2, 198, C.hudDim, 1, "center");
+    drawTextShadow(g, "PRESS ENTER", IW / 2, 128, enterCol, 2, "center");
+    drawText(g, "CLEAR THE SECTORS TO REACH THE SHIP", IW / 2, 198, C.hudDim, 1, "center");
     drawText(g, "2 OR ?level=2 FOR LEVEL 2    E OR ?ending=1 FOR THE ENDING", IW / 2, 208, C.hudDim, 1, "center");
   }
 
@@ -2618,7 +2658,8 @@
     thrustOn = false;
     thrustTime = (level === 2 ? L2_THRUST : 0);
     hintTimer = 240;
-    if (level === 2 && keepScore) {
+    // Always show the Level 2 intro (Roadster reveal), including ?level=2 / key 2.
+    if (level === 2) {
       mode = "levelintro";
       introTimer = 150;
       player.speed = player.defaultSpeed;
@@ -2754,19 +2795,21 @@
     // keep the vehicle on screen for the verification shot
     craters.forEach((c) => { if (c.x < worldX + 520) c.live = false; });
     rocks.forEach((r) => { if (r.x < worldX + 520) r.live = false; });
-    spawnUfo(0);
+    spawnUfo(0, "head");
     const u = ufos[0];
     u.x = worldX + 200;
     u.y = 36;
     u.vx = -0.35;
     u.bombCd = 10000;
     player.invuln = 999;
+    headSpawned = true;
     bombs.push({
       x: u.x + u.w * HEAD_MOUTH_X,
       y: 84,
       vx: -0.05,
       vy: 0.22,
-      live: true
+      live: true,
+      kind: "fireball"
     });
   }
 
