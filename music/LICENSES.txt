@@ -37,7 +37,6 @@ License text: https://creativecommons.org/publicdomain/zero/1.0/
    Notes:   Cool bass-heavy synthwave, a step up in mood from the Level 1 racer.
 
 Files in this folder were transcoded to compact OGG Vorbis (approx. 112 kbps,
-loudness-normalized) from the official OpenGameArt downloads. The generated
-WebAudio chiptune already in index.html is kept only as a fallback when these
-files cannot be loaded (for example when the game is opened as a local file://
-page, which browsers block from fetching sibling files).
+loudness-normalized) from the official OpenGameArt downloads. The same audio
+is also embedded in index.html as base64 so the game has music when opened
+as a local file:// page, as well as on GitHub Pages or any http(s) server.

@@ -21,4 +21,4 @@ Background music is [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/
 - Level 1: [Pure Raceway](https://opengameart.org/content/pure-raceway) by MintoDog (CC0)
 - Level 2: [Cyber Runner](https://opengameart.org/content/cyber-runner-music) by ansimuz (Luis Zuno) (CC0)
 
-The tracks load from the `music/` folder over http(s) (including GitHub Pages) and loop on the music bus, under the sound effects. Press M to mute. If the files cannot be loaded — for example when opening `index.html` directly as a `file://` page — the game falls back to the built-in WebAudio chiptune.
+The tracks are embedded in `index.html` (and also kept in the `music/` folder) so they loop on the music bus under the sound effects on GitHub Pages, any http(s) server, and a local `file://` open. Press M to mute.
