@@ -180,9 +180,9 @@
     city: "#1a0c0a",
     cityWin: ["#c8a24a", "#7ec8d8", "#d87840"],
     ground: ["#8a4a34", "#6e3c28", "#5a3020", "#4a2418", "#341810", "#2a1410"],
-    lip: "#a0583c",
-    crater: "#1a0c0a",
-    craterWall: "#4a241c",
+    lip: "#e0b070",
+    crater: "#120806",
+    craterWall: "#3a1810",
     steelHi: "#e8eaee",
     steel: "#b0b6bc",
     steelMid: "#8a9098",
@@ -205,7 +205,9 @@
     ufoDk: "#2a3a28",
     ufoHi: "#c8d8a0",
     ufoLite: "#f0f060",
-    rock: ["#5a3020", "#3a1c14", "#20100c", "#72402c"],
+    rock: ["#c4a074", "#a87848", "#2a140c", "#ead4b0"],
+    rockOut: "#140806",
+    rockSh: "#201008",
     hud: "#e8e0c8",
     hudDim: "#8a8470",
     accent: "#7ec8d8",
@@ -781,6 +783,29 @@
     },
     god() { player.invuln = 999; player.live = true; },
     isPhone() { return isPhone; },
+    deaths() { return deathLog.slice(); },
+    clearDeaths() { deathLog.length = 0; },
+    clearHazards() { rocks = []; craters = []; bombs = []; ufos = []; bullets = []; },
+    placeRock(offset, kind) {
+      spawnRock(worldX + player.sx + offset, kind || 0);
+      return rocks[rocks.length - 1];
+    },
+    placeCrater(offset, w, d) {
+      spawnCrater(worldX + player.sx + offset, w || 36, d || 14);
+      return craters[craters.length - 1];
+    },
+    setAir(a) {
+      player.air = Math.max(0, a);
+      player.onGround = player.air <= 0;
+      player.jumpV = 0;
+      player.live = true;
+      player.invuln = 0;
+      mode = "playing";
+    },
+    freeze(on) {
+      testFreeze = !!on;
+      if (testFreeze) player.speed = 0;
+    },
     approachCheckpoint(n) {
       const c = checkpoints.find((cp) => cp.n === n);
       if (!c) return false;
@@ -1007,6 +1032,8 @@
     muzzle: 0
   };
 
+  let testFreeze = false;
+  let deathLog = [];
   let craters = [];
   let rocks = [];
   let ufos = [];
@@ -1079,7 +1106,9 @@
     craters.push({ x, w: w || 36, depth: d || (10 + Math.random() * 8) });
   }
   function spawnRock(x, kind) {
-    rocks.push({ x, kind: kind || (Math.random() < 0.3 ? 1 : 0), live: true, w: 0, h: 0 });
+    // kind 0 is a small rock (falsy), so don't use || here or it gets randomized.
+    const k = (kind === 0 || kind === 1) ? kind : (Math.random() < 0.3 ? 1 : 0);
+    rocks.push({ x, kind: k, live: true, w: 0, h: 0 });
     const r = rocks[rocks.length - 1];
     r.w = r.kind ? 14 : 10;
     r.h = r.kind ? 12 : 8;
@@ -1135,6 +1164,8 @@
     thrustTime = (level === 2 ? L2_THRUST : 0);
     lastCheckpoint = 0;
     genX = 280;
+    testFreeze = false;
+    deathLog = [];
     craters = [];
     rocks = [];
     ufos = [];
@@ -1260,6 +1291,27 @@
     const x0 = worldX + player.sx + S(3);
     const y0 = gy - air - (vehPeakH() - S(8));
     return { x: x0, y: y0, w: vehW() - S(8), h: (vehPeakH() - S(12)) + Math.min(air, 4) };
+  }
+  // Visual body clearance above the ground (matches the raised Cybertruck
+  // rocker at Y(S(8)), and the Roadster's lower splitter at Y(S(3))).
+  function vehClearance() { return level === 2 ? S(3) : S(8); }
+  function rockHitsPlayer(r) {
+    if (!r.live || r.live === "gone") return false;
+    const px = worldX + player.sx;
+    const rockL = r.x, rockR = r.x + r.w;
+    const wr = level === 2 ? ROADSTER_WR : WHEEL_R;
+    const fw = px + vehFront();
+    const rw = px + vehRear();
+    // A wheel contacts the rock if it still overlaps in X and has not jumped
+    // clear of the rock's height (1 px of slack so a barely-grazing lip is fair).
+    const wheelHit = (cx) => rockL < cx + wr - 1 && rockR > cx - wr + 1 && player.air < r.h - 1;
+    if (wheelHit(fw) || wheelHit(rw)) return true;
+    // Chassis underside, aligned to the visible flat rocker (not the old
+    // ground-level box that ignored the raised clearance).
+    const underL = px + (level === 2 ? S(5) : S(6));
+    const underR = px + (level === 2 ? S(71) : S(96));
+    if (rockL < underR && rockR > underL && (player.air + vehClearance() + 1) < r.h) return true;
+    return false;
   }
 
   function drawWheel(g, cx, cy, spin, compress) {
@@ -2222,10 +2274,10 @@
         g.fillRect(x, GROUND_Y, 1, y - GROUND_Y);
         g.fillStyle = C.crater;
         g.fillRect(x, y, 1, IH - y);
-        // lip
-        if (y <= GROUND_Y + 2) {
+        // lip — a light dusty rim so the hole reads against the rust sand
+        if (y <= GROUND_Y + 3) {
           g.fillStyle = C.lip;
-          g.fillRect(x, GROUND_Y - 1, 1, 1);
+          g.fillRect(x, GROUND_Y - 1, 1, 2);
         } else {
           g.fillStyle = C.ground[0];
           g.fillRect(x, y, 1, 1);
@@ -2265,23 +2317,30 @@
     const gy = GROUND_Y;
     if (sx < -20 || sx > IW + 8) return;
     if (r.kind === 1) {
+      // dark outline, then dusty body, sunlit top, and a ground shadow
+      fillPoly(g, [
+        [sx - 1, gy], [sx + 3, gy - 9], [sx + 7, gy - 13], [sx + 13, gy - 8], [sx + 15, gy]
+      ], C.rockOut);
       fillPoly(g, [
         [sx, gy], [sx + 3, gy - 8], [sx + 7, gy - 12], [sx + 12, gy - 7], [sx + 14, gy]
       ], C.rock[1]);
       fillPoly(g, [
-        [sx + 3, gy - 8], [sx + 7, gy - 12], [sx + 8, gy - 8], [sx + 5, gy - 6]
+        [sx + 3, gy - 8], [sx + 7, gy - 12], [sx + 9, gy - 8], [sx + 5, gy - 6]
       ], C.rock[3]);
       fillPoly(g, [
         [sx, gy], [sx + 4, gy - 3], [sx + 8, gy], [sx, gy]
-      ], C.rock[2]);
+      ], C.rockSh);
     } else {
+      fillPoly(g, [
+        [sx - 1, gy], [sx + 2, gy - 7], [sx + 6, gy - 9], [sx + 11, gy - 5], [sx + 11, gy]
+      ], C.rockOut);
       fillPoly(g, [
         [sx, gy], [sx + 2, gy - 6], [sx + 6, gy - 8], [sx + 10, gy - 4], [sx + 10, gy]
       ], C.rock[0]);
       fillPoly(g, [
-        [sx + 2, gy - 6], [sx + 6, gy - 8], [sx + 6, gy - 5], [sx + 3, gy - 4]
+        [sx + 2, gy - 6], [sx + 6, gy - 8], [sx + 7, gy - 5], [sx + 3, gy - 4]
       ], C.rock[3]);
-      fillRect(g, sx + 1, gy - 2, 7, 2, C.rock[2]);
+      fillRect(g, sx + 1, gy - 1, 8, 1, C.rockSh);
     }
   }
 
@@ -2388,6 +2447,26 @@
 
   function killPlayer(cause) {
     if (!player.live || player.invuln > 0) return;
+    const mid = worldX + player.sx + vehCX();
+    const fw = worldX + player.sx + vehFront();
+    const rw = worldX + player.sx + vehRear();
+    deathLog.push({
+      cause, frame, level,
+      worldX, sx: player.sx, air: player.air,
+      feet: GROUND_Y - player.air, mid, fw, rw,
+      gyM: groundYAt(mid), gyF: groundYAt(fw), gyR: groundYAt(rw),
+      clearance: vehClearance(),
+      rocks: rocks.filter((r) => Math.abs(r.x - mid) < 140).map((r) => ({
+        x: r.x, w: r.w, h: r.h, kind: r.kind, live: r.live, sx: r.x - worldX, hits: rockHitsPlayer(r)
+      })),
+      craters: craters.filter((c) => Math.abs(c.x - mid) < 180).map((c) => ({
+        x: c.x, w: c.w, depth: c.depth, sx: c.x - worldX,
+        left: c.x - c.w * 0.5, right: c.x + c.w * 0.5
+      })),
+      bombs: bombs.filter((b) => b.live && Math.abs(b.x - mid) < 140).map((b) => ({
+        x: b.x, y: b.y, kind: b.kind, sx: b.x - worldX, sy: b.y
+      }))
+    });
     player.live = false;
     thrustOn = false;
     mode = "dying";
@@ -2548,7 +2627,8 @@
     if (player.muzzle > 0) player.muzzle--;
     if (player.invuln > 0) player.invuln--;
 
-    worldX += player.speed + (!player.onGround && player.live ? JUMP_CARRY : 0);
+    if (testFreeze) player.speed = 0;
+    else worldX += player.speed + (!player.onGround && player.live ? JUMP_CARRY : 0);
     generateUntil(worldX + IW + 420);
     score += 0; // distance scored below
     if (frame % 6 === 0) score += 1;
@@ -2702,36 +2782,37 @@
       const mid = worldX + player.sx + vehCX();
       const fw = worldX + player.sx + vehFront();
       const rw = worldX + player.sx + vehRear();
-      // craters: if chassis is near ground and ground under wheels/center is a pit
+      // Craters: fall in only if a WHEEL is actually in the pit, past the
+      // shallow rim. A hole under the belly that both wheels straddle (common,
+      // since many craters are narrower than the wheelbase) is not a hit.
       if (player.air < 3) {
-        const gyM = groundYAt(mid);
+        const deathY = GROUND_Y + 8;
         const gyF = groundYAt(fw);
         const gyR = groundYAt(rw);
-        const cEase = 1 / DIFFICULTY.HITBOX_HURT;
-        if (gyM > GROUND_Y + 5 * cEase && gyF > GROUND_Y + 4 * cEase && gyR > GROUND_Y + 4 * cEase) {
-          killPlayer("crater");
-        } else if (player.air < 1 && (gyM > GROUND_Y + 7 * cEase)) {
+        if (gyF > deathY || gyR > deathY) {
           killPlayer("crater");
         }
       }
-      // rocks
+      // rocks — wheels or the raised underside, not a ground-level full-body box
       for (let i = 0; i < rocks.length; i++) {
         const r = rocks[i];
         if (!r.live) continue;
-        const [rx0, rx1] = hurtRangeX(6, 4);
-        if (rx0 < r.x + r.w && rx1 > r.x && feet > GROUND_Y - r.h * DIFFICULTY.HITBOX_HURT + 1) {
+        if (rockHitsPlayer(r)) {
           killPlayer("rock");
           r.live = false;
           burst(r.x + 4, GROUND_Y - 4, C.rock[3], 8, 2, 16);
           break;
         }
       }
-      // bombs vs player
+      // bombs vs player (point vs the visible vehicle, and only if on screen)
       for (let i = 0; i < bombs.length; i++) {
         const b = bombs[i];
         if (!b.live) continue;
+        const bsx = b.x - worldX;
+        if (bsx < -6 || bsx > IW + 6) continue;
         const [bx0, bx1] = hurtRangeX(4, 4);
-        if (b.x > bx0 && b.x < bx1 && b.y > feet - S(28) * DIFFICULTY.HITBOX_HURT && b.y < feet + 2 * DIFFICULTY.HITBOX_HURT) {
+        const bodyTop = feet - vehPeakH();
+        if (b.x > bx0 && b.x < bx1 && b.y > bodyTop - 2 && b.y < feet + 2) {
           b.live = false;
           killPlayer("bomb");
           burst(b.x, b.y, C.warning, 10, 2, 16);
