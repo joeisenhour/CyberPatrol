@@ -1099,8 +1099,8 @@
     const gy = GROUND_Y;
     const air = player.air;
     const x0 = worldX + player.sx + S(3);
-    const y0 = gy - air - (vehPeakH() - S(5));
-    return { x: x0, y: y0, w: vehW() - S(8), h: (vehPeakH() - S(9)) + Math.min(air, 4) };
+    const y0 = gy - air - (vehPeakH() - S(8));
+    return { x: x0, y: y0, w: vehW() - S(8), h: (vehPeakH() - S(12)) + Math.min(air, 4) };
   }
 
   function drawWheel(g, cx, cy, spin, compress) {
@@ -1175,20 +1175,20 @@
       [sx + S(103), Y(S(18))],   // nose tip / light bar
       [sx + S(103), Y(S(12))],   // front face bottom
       [sx + S(101), Y(S(9))],    // chin
-      [sx + S(97),  Y(S(8))],
+      [sx + S(97),  Y(S(8))],    // underside = current nose/chin height
       // front wheel-arch cutout (wider at the rocker)
       [sx + S(93),  Y(S(17))],
       [sx + S(80),  Y(S(17))],
-      [sx + S(76),  Y(S(5))],
-      // rocker between the arches
-      [sx + S(31),  Y(S(5))],
+      [sx + S(76),  Y(S(8))],
+      // straight flat rocker between the arches, same height as the nose bottom
+      [sx + S(31),  Y(S(8))],
       // rear wheel-arch cutout
       [sx + S(26),  Y(S(17))],
       [sx + S(15),  Y(S(17))],
-      [sx + S(11),  Y(S(7))],
-      // rear bumper (stepped valance, lower lip like the elevation)
-      [sx + S(8),   Y(S(6))],
-      [sx + S(3),   Y(S(7))],
+      [sx + S(11),  Y(S(8))],
+      // rear bumper continues the same flat underside
+      [sx + S(8),   Y(S(8))],
+      [sx + S(3),   Y(S(8))],
       [sx + S(1),   Y(S(9))],
       [sx + S(0),   Y(S(10))]
     ];
@@ -1214,9 +1214,8 @@
     // Lower body stays C.steel (same stainless as the main body). No
     // steelLo/steelMid skirt or character-line band along the sill.
 
-    // No dark rocker / sill / bumper cladding: the main body (C.steel) already
-    // fills the lower sill between the arches and the rear valance / front chin,
-    // so that area stays the same stainless silver as the rest of the body.
+    // Lower sill is C.steel at the nose-bottom height (Y(S(8))), leaving
+    // visible clearance above the ground; wheels sit on the ground as before.
 
     // Wheel-well frames only (inside the arch cutouts). The old slanted
     // walls that ran down onto the rocker beside each wheel (a dark nub
@@ -1224,10 +1223,10 @@
     // rear wheel) are omitted so the body stainless is clean.
     // Rear arch: inner rear wall + thin top lip
     fillPoly(g, R([
-      [sx + S(11),  Y(S(7))],
+      [sx + S(11),  Y(S(8))],
       [sx + S(15),  Y(S(17))],
       [sx + S(16),  Y(S(17))],
-      [sx + S(13),  Y(S(7))]
+      [sx + S(13),  Y(S(8))]
     ]), C.clad);
     fillPoly(g, R([
       [sx + S(15),  Y(S(17))],
