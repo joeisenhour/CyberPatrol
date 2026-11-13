@@ -88,6 +88,7 @@
   const GRAVITY = 0.05;
   const JUMP_APEX = 58.8; // discrete peak of JUMP_V0 / GRAVITY
   const JUMP_CARRY = 0.9; // extra px/frame while airborne, so min-speed jumps still clear
+  const FORWARD_SHOT_Y = 6; // px above the vehicle's feet; just above ground, at rock height
   const HEAD_W = 19, HEAD_H = 26;
   const HEAD_MOUTH_X = 0.59, HEAD_MOUTH_Y = 0.69;
 
@@ -95,18 +96,18 @@
   const C = {
     sky: "#000000",
     star: ["#ffffff", "#b8c4d8", "#6a7a98", "#3a4860"],
-    far: "#16203a",
-    farHi: "#1e2c4e",
-    mid: "#3a2450",
-    midHi: "#4a3064",
-    near: "#2a3c44",
-    nearHi: "#355058",
-    city: "#0c141e",
+    far: "#2a1410",
+    farHi: "#3c1e18",
+    mid: "#3e1c16",
+    midHi: "#542820",
+    near: "#4e261a",
+    nearHi: "#6a3422",
+    city: "#1a0c0a",
     cityWin: ["#c8a24a", "#7ec8d8", "#d87840"],
-    ground: ["#b8b0a4", "#8a8490", "#6c6256", "#4a4038", "#322820", "#1c1814"],
-    lip: "#d0c8b8",
-    crater: "#141210",
-    craterWall: "#3a342c",
+    ground: ["#8a4a34", "#6e3c28", "#5a3020", "#4a2418", "#341810", "#2a1410"],
+    lip: "#a0583c",
+    crater: "#1a0c0a",
+    craterWall: "#4a241c",
     steelHi: "#e8eaee",
     steel: "#b0b6bc",
     steelMid: "#8a9098",
@@ -129,7 +130,7 @@
     ufoDk: "#2a3a28",
     ufoHi: "#c8d8a0",
     ufoLite: "#f0f060",
-    rock: ["#6a6258", "#4a463e", "#2e2c28", "#8a8278"],
+    rock: ["#5a3020", "#3a1c14", "#20100c", "#72402c"],
     hud: "#e8e0c8",
     hudDim: "#8a8470",
     accent: "#7ec8d8",
@@ -149,8 +150,8 @@
     puffDim: "#c8d0d8"
   };
 
-  const PAL_L1 = { far: "#16203a", farHi: "#1e2c4e", mid: "#3a2450", midHi: "#4a3064", near: "#2a3c44", nearHi: "#355058", city: "#0c141e", haze: "#0a0e14", band: "#12161c" };
-  const PAL_L2 = { far: "#0c2030", farHi: "#163848", mid: "#14342c", midHi: "#1c4a3c", near: "#1a3038", nearHi: "#284850", city: "#0a1218", haze: "#081018", band: "#10181c" };
+  const PAL_L1 = { far: "#2a1410", farHi: "#3c1e18", mid: "#3e1c16", midHi: "#542820", near: "#4e261a", nearHi: "#6a3422", city: "#1a0c0a", haze: "#1a0e0c", band: "#241410" };
+  const PAL_L2 = { far: "#261210", farHi: "#3a1a16", mid: "#3a1a16", midHi: "#4e221c", near: "#4a2218", nearHi: "#62301e", city: "#160a08", haze: "#180c0a", band: "#20120e" };
 
   const game = document.createElement("canvas");
   game.width = IW;
@@ -300,6 +301,9 @@
         this.master = this.ctx.createGain();
         this.master.gain.value = 0.2;
         this.master.connect(this.ctx.destination);
+        this.musicBus = this.ctx.createGain();
+        this.musicBus.gain.value = 0.55;
+        this.musicBus.connect(this.master);
       }
       if (this.ctx.state === "suspended") this.ctx.resume();
       return true;
@@ -364,6 +368,7 @@
     },
     warn() { this.tone(880, 0.08, "square", 0.07); },
     win() {
+      this.stopMusic();
       // short victory fanfare; tone() already no-ops when muted
       const notes = [
         [392, 0.16, 0.00], [523, 0.16, 0.12], [659, 0.16, 0.24],
@@ -373,22 +378,98 @@
       notes.forEach(([f, d, delay]) => this.tone(f, d, "square", 0.09, 0, delay));
       this.tone(262, 0.7, "triangle", 0.05, 0, 1.02);
     },
+    gameOver() {
+      this.stopMusic();
+      this.tone(196, 0.22, "square", 0.08, 0, 0);
+      this.tone(147, 0.28, "square", 0.08, 0, 0.18);
+      this.tone(110, 0.5, "sawtooth", 0.09, 55, 0.4);
+    },
     thrust() {
       this.noise(0.12, 0.07, 900);
       this.tone(180, 0.1, "square", 0.04, 0, 0);
     },
+    startMusic(delay) {
+      this.step = 0;
+      this.musicTime = 0;
+      this.musicHold = delay || 0;
+      if (this.musicBus && this.ctx) {
+        const t = this.ctx.currentTime;
+        this.musicBus.gain.cancelScheduledValues(t);
+        this.musicBus.gain.setTargetAtTime(0.55, t, 0.05);
+      }
+    },
+    stopMusic() {
+      this.musicTime = 0;
+      this.musicHold = 0;
+      this.step = 0;
+      if (this.musicBus && this.ctx) {
+        const t = this.ctx.currentTime;
+        this.musicBus.gain.cancelScheduledValues(t);
+        this.musicBus.gain.setTargetAtTime(0.0001, t, 0.04);
+      }
+    },
+    schedTone(at, freq, dur, type, vol) {
+      if (!freq || !this.ctx) return;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = type || "square";
+      o.frequency.setValueAtTime(freq, at);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(vol || 0.05, at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      o.connect(g); g.connect(this.musicBus);
+      o.start(at); o.stop(at + dur + 0.02);
+    },
+    schedHat(at, vol) {
+      if (!this.ctx) return;
+      const n = this.ctx.createBufferSource();
+      const len = Math.max(1, Math.floor(this.ctx.sampleRate * 0.04));
+      const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      n.buffer = buf;
+      const f = this.ctx.createBiquadFilter();
+      f.type = "highpass";
+      f.frequency.value = 1800;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(vol || 0.03, at);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.04);
+      n.connect(f); f.connect(g); g.connect(this.musicBus);
+      n.start(at); n.stop(at + 0.05);
+    },
+    // Original looping chiptune (not the Irem Moon Patrol tune):
+    // driving E-minor bass ostinato + syncopated lead hook; L2 is a
+    // slightly faster G-minor variation of the same idea.
     music(dt, playing) {
       if (!this.ctx || this.muted || !this.musicOn || !playing) return;
       if (this.ctx.state === "suspended") return;
-      this.nextNote -= dt;
-      if (this.nextNote > 0) return;
-      const bass = [98, 98, 110, 87, 98, 130, 110, 82];
-      const lead = [0, 196, 0, 233, 196, 0, 262, 233];
-      const i = this.step % 8;
-      this.tone(bass[i], 0.14, "triangle", 0.035);
-      if (lead[i]) this.tone(lead[i], 0.1, "square", 0.025);
-      this.step++;
-      this.nextNote = 0.18;
+      if (this.musicHold > 0) {
+        this.musicHold -= dt;
+        return;
+      }
+      if (this.musicBus && this.musicBus.gain.value < 0.2) {
+        this.musicBus.gain.setTargetAtTime(0.55, this.ctx.currentTime, 0.05);
+      }
+      const now = this.ctx.currentTime;
+      if (!this.musicTime || this.musicTime < now - 0.2) this.musicTime = now;
+      const stepLen = (level === 2 ? 0.102 : 0.114);
+      const bass1 = [82,82,0,82, 123,0,82,0, 98,98,0,73, 110,0,123,0, 82,82,0,82, 123,0,98,0, 110,0,123,147, 82,0,82,0];
+      const lead1 = [330,0,392,440, 494,0,440,392, 330,0,294,0, 330,392,440,0, 494,440,392,330, 294,0,330,0, 392,440,494,587, 494,440,392,0];
+      const bass2 = [98,98,0,98, 147,0,98,0, 110,110,0,87, 123,0,147,0, 98,98,0,98, 147,0,110,0, 123,0,147,165, 98,0,98,0];
+      const lead2 = [392,0,440,466, 587,0,523,466, 392,0,349,0, 392,440,466,0, 587,523,466,392, 349,0,392,0, 440,466,587,698, 587,523,466,0];
+      const bass = level === 2 ? bass2 : bass1;
+      const lead = level === 2 ? lead2 : lead1;
+      while (this.musicTime < now + 0.08) {
+        const i = this.step % 32;
+        const at = this.musicTime;
+        if (bass[i]) this.schedTone(at, bass[i], 0.13, "triangle", 0.05);
+        if (lead[i]) this.schedTone(at, lead[i], 0.10, "square", 0.032);
+        if (i % 8 === 0 && bass[i]) this.schedTone(at, bass[i] * 0.5, 0.16, "triangle", 0.025);
+        if (i % 4 === 2) this.schedHat(at, 0.028);
+        if (i % 8 === 4) this.schedHat(at, 0.04);
+        this.step++;
+        this.musicTime += stepLen;
+      }
     }
   };
 
@@ -1480,22 +1561,22 @@
   }
 
   function drawLunarHills(g) {
-    // far soft mounds, monochrome like the official HLS lunar render
-    fillPoly(g, [[-10, 150], [40, 128], [90, 138], [140, 124], [200, 140], [260, 130], [320, 142], [400, 132], [400, 168], [-10, 168]], "#1c1c20");
-    fillPoly(g, [[-10, 156], [50, 142], [110, 150], [170, 140], [230, 152], [300, 144], [400, 150], [400, 168], [-10, 168]], "#2a2a2e");
+    // far soft mounds, same shapes, dark reddish lunar sand
+    fillPoly(g, [[-10, 150], [40, 128], [90, 138], [140, 124], [200, 140], [260, 130], [320, 142], [400, 132], [400, 168], [-10, 168]], C.far);
+    fillPoly(g, [[-10, 156], [50, 142], [110, 150], [170, 140], [230, 152], [300, 144], [400, 150], [400, 168], [-10, 168]], C.mid);
   }
 
   function drawLunarGround(g) {
-    fillRect(g, 0, GROUND_Y, IW, IH - GROUND_Y, "#6a6460");
-    fillRect(g, 0, GROUND_Y, IW, 8, "#8a847c");
-    fillRect(g, 0, GROUND_Y + 8, IW, 14, "#5a5650");
-    fillRect(g, 0, GROUND_Y + 22, IW, IH - GROUND_Y - 22, "#3a3632");
+    fillRect(g, 0, GROUND_Y, IW, IH - GROUND_Y, C.ground[2]);
+    fillRect(g, 0, GROUND_Y, IW, 8, C.ground[0]);
+    fillRect(g, 0, GROUND_Y + 8, IW, 14, C.ground[2]);
+    fillRect(g, 0, GROUND_Y + 22, IW, IH - GROUND_Y - 22, C.ground[4]);
     // shallow craters
     const craters = [[30, 6, 3], [90, 14, 4], [160, 8, 2], [210, 18, 3], [300, 11, 2], [350, 20, 5], [70, 28, 3]];
     for (let i = 0; i < craters.length; i++) {
       const [x, dy, r] = craters[i];
-      fillCircle(g, x, GROUND_Y + dy, r, "#3a3632");
-      fillCircle(g, x - 1, GROUND_Y + dy - 1, Math.max(1, r - 2), "#5a544e");
+      fillCircle(g, x, GROUND_Y + dy, r, C.ground[4]);
+      fillCircle(g, x - 1, GROUND_Y + dy - 1, Math.max(1, r - 2), C.ground[2]);
     }
   }
 
@@ -1984,7 +2065,7 @@
     const originX = worldX + player.sx;
     const air = player.air;
     const by = GROUND_Y - air;
-    bullets.push({ x: originX + vehW(), y: by - vehNoseH() + (player.frontS + player.rearS) * 0.2, vx: 4.2, vy: 0, live: true, kind: 0 });
+    bullets.push({ x: originX + vehW(), y: by - FORWARD_SHOT_Y, vx: 4.2, vy: 0, live: true, kind: 0 });
     bullets.push({ x: originX + vehPeakX(), y: by - (vehPeakH() + 1) + (player.frontS + player.rearS) * 0.2, vx: player.speed, vy: -3.6, live: true, kind: 1 });
     SFX.shoot();
   }
@@ -2037,6 +2118,7 @@
   function respawnOrOver() {
     if (lives <= 0) {
       mode = "gameover";
+      SFX.gameOver();
       return;
     }
     mode = "playing";
@@ -2305,7 +2387,7 @@
       for (let j = 0; j < bullets.length; j++) {
         const b = bullets[j];
         if (!b.live || b.kind === 1) continue; // vertical shots usually miss ground rocks; allow if low
-        if (b.x > r.x - 1 && b.x < r.x + r.w + 1 && b.y > GROUND_Y - r.h - 2 && b.y < GROUND_Y + 2) {
+        if (b.x > r.x - 1 && b.x < r.x + r.w + 1 && b.y >= GROUND_Y - r.h - 2 && b.y < GROUND_Y + 2) {
           b.live = false;
           hitRock(r);
           break;
@@ -2666,6 +2748,7 @@
     } else {
       mode = "playing";
     }
+    if (keepScore) SFX.startMusic(0.15);
   }
 
   function startEnding() {
@@ -2692,6 +2775,7 @@
     const n = (wantedLevel === 2 ? 2 : 1);
     wantedLevel = 1;
     beginLevel(n, false);
+    SFX.startMusic(0.5);
   }
 
   function tick(dt) {
@@ -2719,7 +2803,7 @@
         player.speed = player.defaultSpeed;
         mode = "playing";
       }
-      SFX.music(dt, false);
+      SFX.music(dt, true);
     } else if (mode === "playing") {
       if (input.pausePress) { resumeMode = mode; mode = "pause"; }
       else updatePlaying();
