@@ -1,0 +1,43 @@
+CyberPatrol music licenses
+==========================
+
+All three tracks are licensed CC0 1.0 Universal (public domain dedication).
+No attribution is required. Credit is included here for transparency.
+
+License text: https://creativecommons.org/publicdomain/zero/1.0/
+
+1. Title screen — "Ground Zero" (zero2_drums mix)
+   Author:  Centurion_of_war
+   Source:  https://opengameart.org/content/ground-zero
+   License: CC0 1.0 Universal (listed as "CC0" / Creative Commons Zero on the
+            OpenGameArt page, with a link to creativecommons.org/publicdomain/zero)
+   Length:  76.8 seconds, seamless-style chiptune / techno / retrowave loop
+   File:    music/title.ogg
+   Notes:   Energetic retro synth with a strong low end, used as the title theme.
+
+2. Level 1 — "Pure Raceway" (bpm 160)
+   Author:  MintoDog
+   Source:  https://opengameart.org/content/pure-raceway
+   License: CC0 1.0 Universal (listed as "CC0" / Creative Commons Zero on the
+            OpenGameArt page, with a link to creativecommons.org/publicdomain/zero)
+   Length:  96 seconds, advertised as loopable racing-game music
+   File:    music/level1.ogg
+   Notes:   Driving arcade-racer feel with a very prominent bass line.
+
+3. Level 2 — "Cyber Runner"
+   Author:  ansimuz (Luis Zuno, @ansimuz)
+   Source:  https://opengameart.org/content/cyber-runner-music
+   License: CC0 1.0 Universal (listed as "CC0" / Creative Commons Zero on the
+            OpenGameArt page, with a link to creativecommons.org/publicdomain/zero).
+            The bundled public-license.txt also states the assets may be used in
+            personal or commercial projects, modified, and redistributed; credit
+            is not required but is appreciated.
+   Length:  98 seconds, looped synthwave / action / sci-fi track
+   File:    music/level2.ogg
+   Notes:   Cool bass-heavy synthwave, a step up in mood from the Level 1 racer.
+
+Files in this folder were transcoded to compact OGG Vorbis (approx. 112 kbps,
+loudness-normalized) from the official OpenGameArt downloads. The generated
+WebAudio chiptune already in index.html is kept only as a fallback when these
+files cannot be loaded (for example when the game is opened as a local file://
+page, which browsers block from fetching sibling files).

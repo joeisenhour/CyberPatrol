@@ -92,7 +92,17 @@
   // A compressor-limiter on the output catches stacked peaks.
   const AUDIO = {
     MASTER: 0.42,
-    MUSIC_BUS: 0.9
+    MUSIC_BUS: 0.9,
+    MUSIC_FILE_GAIN: 0.85 // recorded tracks sit under SFX on the same bus
+  };
+
+  // CC0 / public-domain loops (see music/LICENSES.txt). Loaded from relative
+  // paths so GitHub Pages / any http(s) server works. file:// cannot fetch
+  // sibling files in Chrome/Edge, so we fall back to the generated chiptune.
+  const MUSIC_FILES = {
+    title: "music/title.ogg",
+    level1: "music/level1.ogg",
+    level2: "music/level2.ogg"
   };
 
   /* -------- DIFFICULTY -------- */
@@ -113,8 +123,8 @@
   };
 
   const L1_TIME = Math.round(52 * DIFFICULTY.TIMER); // was 52
-  const L2_TIME = Math.round(51 * DIFFICULTY.TIMER); // was 51
-  const L2_THRUST = Math.round(L2_TIME / 3); // stays ~1/3 of the level-2 budget (was 17)
+  const L2_TIME = L1_TIME; // L2 uses the same timer budget as L1
+  const L2_THRUST = Math.round(L2_TIME / 3); // thrusters stay a L2 bonus (~1/3 of the budget)
   const START_TIME = L1_TIME;
   const JUMP_V0 = -2.45;
   const GRAVITY = 0.05;
@@ -373,9 +383,10 @@
       if (this.ctx.state !== "running") {
         const p = this.ctx.resume();
         if (p && typeof p.then === "function") {
-          p.then(() => { if (this.musicPlaying) this._schedule(); });
+          p.then(() => { if (this.musicPlaying) this._resumePlayback(); });
         }
       }
+      this._loadTracks();
       // Nudge the audio thread so currentTime starts advancing (first context
       // in some Chrome/file:// sessions stays at 0 until a voice starts).
       if (this.ctx.state === "running" && !this._clockKick) {
@@ -469,43 +480,167 @@
       this.noise(0.12, 0.07, 900);
       this.tone(180, 0.1, "square", 0.04, 0, 0);
     },
-    startMusic(delay) {
-      this.unlock();
+    _wantedTrack() {
+      if (mode === "title") return "title";
+      return level === 2 ? "level2" : "level1";
+    },
+    _loadTracks() {
+      if (this._loadPromise) return this._loadPromise;
+      this.buffers = this.buffers || {};
+      if (!this.ensure()) {
+        this.filesFailed = true;
+        return Promise.reject(new Error("no audio context"));
+      }
+      const ctx = this.ctx;
+      this._loadPromise = Promise.all(Object.keys(MUSIC_FILES).map((id) => {
+        return fetch(MUSIC_FILES[id], { cache: "force-cache" }).then((res) => {
+          if (!res.ok) throw new Error("HTTP " + res.status + " " + MUSIC_FILES[id]);
+          return res.arrayBuffer();
+        }).then((ab) => ctx.decodeAudioData(ab.slice(0))).then((buf) => {
+          this.buffers[id] = buf;
+        });
+      })).then(() => {
+        this.filesReady = true;
+        this.filesFailed = false;
+        if (this.musicPlaying && !this.usingFiles) this._crossfadeTo(this._wantedTrack(), 0);
+      }).catch((err) => {
+        this.filesFailed = true;
+        this.filesReady = false;
+        this._loadError = String(err && err.message ? err.message : err);
+      });
+      return this._loadPromise;
+    },
+    _stopFileSource(fade) {
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const dur = Math.max(0.04, fade || 0.08);
+      if (this._fileGain) {
+        const g = this._fileGain;
+        const cur = Math.max(0.0001, g.gain.value || 0.0001);
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(cur, now);
+        g.gain.linearRampToValueAtTime(0.0001, now + dur);
+      }
+      if (this._fileSource) {
+        const src = this._fileSource;
+        try { src.stop(now + dur + 0.04); } catch (e) {}
+        src.onended = null;
+        this._fileSource = null;
+      }
+      this._fileGain = null;
+    },
+    _crossfadeTo(track, delay) {
+      if (!this.ctx || !this.buffers || !this.buffers[track]) return false;
+      const now = this.ctx.currentTime;
+      const startAt = now + Math.max(0, delay || 0);
+      const fade = 0.7;
+      if (this.usingFiles && this.currentTrack === track && this._fileSource) return true;
+      this._clearPump();
+      this.usingChiptune = false;
+      this._stopFileSource(this._fileSource ? fade : 0.04);
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.buffers[track];
+      src.loop = true;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.setValueAtTime(0.0001, startAt);
+      g.gain.linearRampToValueAtTime(AUDIO.MUSIC_FILE_GAIN, startAt + fade);
+      src.connect(g);
+      g.connect(this.musicBus);
+      src.start(startAt);
+      this._fileSource = src;
+      this._fileGain = g;
+      this.currentTrack = track;
+      this.usingFiles = true;
+      this.musicPlaying = true;
+      this._liftBus(now);
+      return true;
+    },
+    _liftBus(now) {
+      if (!this.musicBus || !this.ctx) return;
+      const t = now != null ? now : this.ctx.currentTime;
+      const g = this.musicBus.gain;
+      const cur = Math.max(0.0001, g.value || 0.0001);
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(cur, t);
+      g.linearRampToValueAtTime(AUDIO.MUSIC_BUS, t + 0.04);
+    },
+    _startChiptune(delay) {
+      this.usingFiles = false;
+      this.usingChiptune = true;
+      this.currentTrack = "chiptune-" + this._wantedTrack();
       this.step = 0;
       this.noteCount = 0;
-      this.musicPlaying = true;
       const now = this.ctx ? this.ctx.currentTime : 0;
-      // Delay is on the audio clock (not a JS timeout / hold that can stall).
       this.musicTime = now + Math.max(0, delay || 0);
-      if (this.musicBus && this.ctx) {
-        const g = this.musicBus.gain;
-        const cur = Math.max(0.0001, g.value || 0.0001);
-        g.cancelScheduledValues(now);
-        g.setValueAtTime(cur, now);
-        g.linearRampToValueAtTime(AUDIO.MUSIC_BUS, now + 0.04);
-      }
+      this._liftBus(now);
       this._armPump();
       this._schedule();
+    },
+    _resumePlayback() {
+      if (!this.musicPlaying) return;
+      if (this.usingChiptune) { this._schedule(); return; }
+      const want = this._wantedTrack();
+      if (this.filesReady && this.buffers[want]) {
+        if (!this._fileSource || this.currentTrack !== want) this._crossfadeTo(want, 0);
+      }
+    },
+    startMusic(delay) {
+      this.unlock();
+      this.musicPlaying = true;
+      const want = this._wantedTrack();
+      this._liftBus(this.ctx ? this.ctx.currentTime : 0);
+      if (this.filesReady && this.buffers[want]) {
+        this._crossfadeTo(want, delay || 0);
+        return;
+      }
+      if (this.filesFailed) {
+        if (!this.usingChiptune || this.currentTrack !== "chiptune-" + want) this._startChiptune(delay || 0);
+        return;
+      }
+      this._loadTracks().then(() => {
+        if (!this.musicPlaying) return;
+        const track = this._wantedTrack();
+        if (this.filesReady && this.buffers[track]) this._crossfadeTo(track, 0);
+        else if (!this.usingChiptune) this._startChiptune(0);
+      }).catch(() => {
+        if (this.musicPlaying && !this.usingFiles && !this.usingChiptune) this._startChiptune(0);
+      });
+      // Don't start the generated loop while a fetch is in flight on http(s);
+      // on file:// the fetch rejects almost immediately and the catch above
+      // starts the chiptune fallback.
+      if (typeof location !== "undefined" && location.protocol === "file:") {
+        // Give the failing fetch a tick, then fall back if needed (handled in catch).
+      }
     },
     stopMusic() {
       this.musicPlaying = false;
       this.musicTime = 0;
       this._clearPump();
+      this.usingChiptune = false;
+      this._stopFileSource(0.18);
+      this.currentTrack = null;
+      this.usingFiles = false;
       if (this.musicBus && this.ctx) {
         const t = this.ctx.currentTime;
         const g = this.musicBus.gain;
         const cur = Math.max(0.0001, g.value || 0.0001);
         g.cancelScheduledValues(t);
         g.setValueAtTime(cur, t);
-        g.linearRampToValueAtTime(0.0001, t + 0.08);
+        g.linearRampToValueAtTime(0.0001, t + 0.18);
       }
     },
     // Keep the loop in sync with game mode. Called at the end of tick() with
     // the *current* mode so a title-frame startGame() still starts music.
     setPlaying(on) {
       if (on) {
+        const want = this._wantedTrack();
         if (!this.musicPlaying) this.startMusic(0);
-        else this._schedule();
+        else if (this.usingFiles && this.currentTrack !== want && this.filesReady) this._crossfadeTo(want, 0);
+        else if (this.usingChiptune) {
+          if (this.currentTrack !== "chiptune-" + want) this._startChiptune(0);
+          else this._schedule();
+        }
       } else if (this.musicPlaying) {
         this.stopMusic();
       }
@@ -646,7 +781,12 @@
     state() { return SFX.ctx ? SFX.ctx.state : "none"; },
     playing() { return !!SFX.musicPlaying; },
     busGain() { return SFX.musicBus ? SFX.musicBus.gain.value : 0; },
-    muted() { return !!SFX.muted; }
+    muted() { return !!SFX.muted; },
+    track() { return SFX.currentTrack || null; },
+    usingFiles() { return !!SFX.usingFiles; },
+    filesReady() { return !!SFX.filesReady; },
+    filesFailed() { return !!SFX.filesFailed; },
+    loadError() { return SFX._loadError || null; }
   };
 
   /* ---------------- font ---------------- */
@@ -882,10 +1022,11 @@
   }
 
   function difficulty() {
-    // Ramp across the 5 sections (and slightly with distance); L2 starts a bit harder.
+    // Ramp across the 5 sections (and slightly with distance). Level 2 uses
+    // the same curve as level 1 so it is not harder; thrusters are the bonus.
     const sect = destIndex() / Math.max(1, CP_COUNT - 1);
     const path = worldX / (CP_SPACING * CP_COUNT);
-    return Math.min(1, path * 0.35 + sect * 0.45 + (level === 2 ? 0.22 : 0));
+    return Math.min(1, path * 0.35 + sect * 0.45);
   }
 
   function groundYAt(wx) {
@@ -1238,32 +1379,9 @@
       [sx + S(97),  Y(S(11))]
     ]), C.steelMid);
 
-    // Black rocker cladding (thin strip, character-line-to-rocker stays slim)
-    fillPoly(g, R([
-      [sx + S(31),  Y(S(8))],
-      [sx + S(76),  Y(S(8))],
-      [sx + S(76),  Y(S(5))],
-      [sx + S(31),  Y(S(5))]
-    ]), C.clad);
-    // Rear bumper cladding
-    fillPoly(g, R([
-      [sx + S(0),   Y(S(10))],
-      [sx + S(3),   Y(S(7))],
-      [sx + S(8),   Y(S(6))],
-      [sx + S(11),  Y(S(7))],
-      [sx + S(8),   Y(S(7))],
-      [sx + S(3),   Y(S(8))],
-      [sx + S(1),   Y(S(10))]
-    ]), C.clad);
-    // Front chin cladding
-    fillPoly(g, R([
-      [sx + S(97),  Y(S(8))],
-      [sx + S(100), Y(S(9))],
-      [sx + S(103), Y(S(12))],
-      [sx + S(103), Y(S(11))],
-      [sx + S(101), Y(S(8))],
-      [sx + S(97),  Y(S(7))]
-    ]), C.clad);
+    // No dark rocker / sill / bumper cladding: the main body (C.steel) already
+    // fills the lower sill between the arches and the rear valance / front chin,
+    // so that area stays the same stainless silver as the rest of the body.
 
     // Trapezoid arch cladding — FRAME only, so the round wheel stays visible
     // Rear arch
@@ -1373,19 +1491,14 @@
       [sx + S(75),  Y(S(11))]
     ]), C.steelLo);
 
-    // Vault / tonneau seam on the bed
+    // Horizontal tonneau crease on the sail; the old vertical bed seam is
+    // omitted so the bed is unbroken stainless (C.steel from the body fill).
     fillPoly(g, R([
       [sx + S(3),   Y(S(24))],
       [sx + S(35),  Y(S(29))],
       [sx + S(35),  Y(S(28))],
       [sx + S(3),   Y(S(23))]
     ]), C.steelMid);
-    fillPoly(g, R([
-      [sx + S(17),  Y(S(26))],
-      [sx + S(18),  Y(S(26))],
-      [sx + S(18),  Y(S(18))],
-      [sx + S(17),  Y(S(18))]
-    ]), C.steelLo);
 
     // Door handles on the character line
     fillPoly(g, R([
@@ -2509,8 +2622,7 @@
         spawnUfo(0);
       }
       if (d > 0.35 && Math.random() < 0.4 * DIFFICULTY.ENEMY_DENSITY) spawnUfo(1);
-      if (level === 2 && Math.random() < 0.45 * DIFFICULTY.ENEMY_DENSITY) spawnUfo(1);
-      ufoSpawnCd = ((level === 2 ? 140 : 180) - d * 70 + Math.random() * 70) / DIFFICULTY.ENEMY_DENSITY;
+      ufoSpawnCd = (180 - d * 70 + Math.random() * 70) / DIFFICULTY.ENEMY_DENSITY;
     }
 
     // bullets
@@ -3044,7 +3156,7 @@
         startGame();
       }
     }
-    SFX.setPlaying(mode === "playing" || mode === "levelintro");
+    SFX.setPlaying(mode === "playing" || mode === "levelintro" || mode === "title");
     frame++;
   }
 
