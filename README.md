@@ -8,8 +8,7 @@ Or open `index.html` in a browser.
 
 - Two levels and an ending at the Starship.
 
-Controls: Left/Right speed, Up/W/Space jump, Z/X/F fire, M mute, P/Esc pause, Enter start.
-Test shortcuts: `?level=2`, `?ending=1`, or press 2 / E on the title screen.
+Controls: Left/Right speed, Up/W/Space jump, Z/X/F fire, M mute, P/Esc pause, Enter start. On a phone, hold it sideways; tap the left half to jump (or toggle thrusters on level 2) and the right half to fire. Tap to start or continue.
 
 `screenshots/` holds previews; `ref/` holds reference material used for proportions (not used by the game).
 
@@ -22,3 +21,7 @@ Background music is [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/
 - Level 2: [Cyber Runner](https://opengameart.org/content/cyber-runner-music) by ansimuz (Luis Zuno) (CC0)
 
 The tracks are embedded in `index.html` (and also kept in the `music/` folder) so they loop on the music bus under the sound effects on GitHub Pages, any http(s) server, and a local `file://` open. Press M to mute.
+
+## Development
+
+Hidden title-screen shortcuts (not shown in the game): press `2` or open `?level=2` for Level 2; press `E` or open `?ending=1` for the ending.
