@@ -15,14 +15,18 @@ License text: https://creativecommons.org/publicdomain/zero/1.0/
    File:    music/title.ogg
    Notes:   Energetic retro synth with a strong low end, used as the title theme.
 
-2. Level 1 — "Pure Raceway" (bpm 160)
-   Author:  MintoDog
-   Source:  https://opengameart.org/content/pure-raceway
+2. Level 1 — "Cyber City 2-b" (from the Warped City 2 pack)
+   Author:  ansimuz (Luis Zuno, @ansimuz)
+   Source:  https://opengameart.org/content/warped-city-2
    License: CC0 1.0 Universal (listed as "CC0" / Creative Commons Zero on the
-            OpenGameArt page, with a link to creativecommons.org/publicdomain/zero)
-   Length:  96 seconds, advertised as loopable racing-game music
+            OpenGameArt page, with a link to creativecommons.org/publicdomain/zero).
+            The bundled public-license.txt also states the assets may be used in
+            personal or commercial projects, modified, and redistributed; credit
+            is not required but is appreciated.
+   Length:  56 seconds, looped synthwave / cyberpunk track
    File:    music/level1.ogg
-   Notes:   Driving arcade-racer feel with a very prominent bass line.
+   Notes:   Bass-heavy cyberpunk synthwave from the same composer as the Level 2
+            theme, a driving counterpart to "Cyber Runner" without duplicating it.
 
 3. Level 2 — "Cyber Runner"
    Author:  ansimuz (Luis Zuno, @ansimuz)

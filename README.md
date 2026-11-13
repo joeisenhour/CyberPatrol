@@ -17,7 +17,7 @@ Controls: Left/Right speed, Up/W/Space jump, Z/X/F fire, M mute, P/Esc pause, En
 Background music is [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain). Details and original download links are in `music/LICENSES.txt`.
 
 - Title: [Ground Zero](https://opengameart.org/content/ground-zero) by Centurion_of_war (CC0)
-- Level 1: [Pure Raceway](https://opengameart.org/content/pure-raceway) by MintoDog (CC0)
+- Level 1: [Cyber City 2-b](https://opengameart.org/content/warped-city-2) (from Warped City 2) by ansimuz (Luis Zuno) (CC0)
 - Level 2: [Cyber Runner](https://opengameart.org/content/cyber-runner-music) by ansimuz (Luis Zuno) (CC0)
 
 The tracks are embedded in `index.html` (and also kept in the `music/` folder) so they loop on the music bus under the sound effects on GitHub Pages, any http(s) server, and a local `file://` open. Press M to mute.
