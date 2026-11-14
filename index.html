@@ -628,7 +628,9 @@
   const view = document.getElementById("view");
   const vctx = view.getContext("2d", { alpha: false });
 
+  let phoneOverride = null;
   function isPhoneDevice() {
+    if (phoneOverride !== null) return phoneOverride;
     try {
       const ua = navigator.userAgent || "";
       if (/iPad|Android(?!.*Mobile)|Tablet|Silk|Kindle|PlayBook/i.test(ua)) return false;
@@ -650,12 +652,17 @@
   let isPhone = isPhoneDevice();
 
   function isPortraitView() {
+    const windowPortrait = window.innerHeight > window.innerWidth + 24;
+    const windowLandscape = window.innerWidth > window.innerHeight + 24;
     try {
       if (screen.orientation && typeof screen.orientation.type === "string") {
+        // A clearly landscape window wins over a stale portrait orientation
+        // type (headless Chrome often reports portrait-primary at a landscape viewport).
+        if (windowLandscape) return false;
         return screen.orientation.type.indexOf("portrait") === 0;
       }
     } catch (e) {}
-    return window.innerHeight > window.innerWidth + 24;
+    return windowPortrait;
   }
 
   function updateRotateOverlay() {
@@ -733,7 +740,7 @@
         ev.preventDefault();
         return;
       }
-      if (mode === "playing") {
+      if (mode === "playing" || mode === "gameover") {
         const rect = view.getBoundingClientRect();
         const x = ev.clientX - rect.left;
         if (x < rect.width * 0.5) phoneJumpLatch = true;
@@ -750,8 +757,8 @@
   const latch = new Set();
   const pads = { slow: false, fast: false, jump: false, fire: false, start: false, thrust: false };
   let pointerStartLatch = false;
-  const input = { slow: false, fast: false, jump: false, jumpPress: false, fire: false, firePress: false, startPress: false, mutePress: false, pausePress: false, thrustPress: false, downPress: false, level2Press: false, level3Press: false, endingPress: false };
-  let prevJump = false, prevFire = false, prevStart = false, prevMute = false, prevPause = false, prevThrust = false, prevDown = false, prevLevel2 = false, prevLevel3 = false, prevEnding = false;
+  const input = { slow: false, fast: false, jump: false, jumpPress: false, fire: false, firePress: false, startPress: false, mutePress: false, pausePress: false, thrustPress: false, downPress: false, level2Press: false, level3Press: false, endingPress: false, restartPress: false };
+  let prevJump = false, prevFire = false, prevStart = false, prevMute = false, prevPause = false, prevThrust = false, prevDown = false, prevLevel2 = false, prevLevel3 = false, prevEnding = false, prevRestart = false;
 
   const jumpSet = new Set(["arrowup", "up", "w", " ", "space", "spacebar"]);
   const fireSet = new Set(["z", "x", "f", "control", "ctrl", "shift", "j"]);
@@ -876,6 +883,7 @@
     input.level2Press = !prevLevel2 && (!!keys["2"] || latch.has("2"));
     input.level3Press = !prevLevel3 && (!!keys["3"] || latch.has("3"));
     input.endingPress = !prevEnding && (!!(keys["e"] || keys["E"]) || latch.has("e"));
+    input.restartPress = !prevRestart && (!!keys["r"] || latch.has("r"));
     prevJump = jumpDown;
     prevFire = fireDown;
     prevStart = startDown;
@@ -886,6 +894,7 @@
     prevLevel2 = !!keys["2"];
     prevLevel3 = !!keys["3"];
     prevEnding = !!(keys["e"] || keys["E"]);
+    prevRestart = !!keys["r"];
     latch.clear();
     // clear momentary gamepad buttons (touch .held persists via pads)
     // gamepad sets pads.* true each poll; next collect will poll again
@@ -1177,11 +1186,12 @@
     window.__cyberTest = {
     snapshot() {
       return {
-        mode, level, dest: destPoint, worldX, timeLeft,
+        mode, level, frame, dest: destPoint, worldX, timeLeft,
         heads: ufos.filter((u) => u.kind === "head" && u.live).length,
         headSpawned: headsSpawned, headsSpawned,
         air: player.air, onGround: player.onGround, jumpV: player.jumpV,
-        live: player.live, thrustOn, thrustTime, fuelEmptyHintTimer, pendingThrustEngage,
+        live: player.live, lives, thrustOn, thrustTime, fuelEmptyHintTimer, pendingThrustEngage,
+        levelStartScore, score,
         shots: bullets.filter((b) => b.live).length, speed: player.speed,
         cutTimer: story ? story.cutTimer : 0,
         rampT: story ? story.rampT : 0,
@@ -1338,6 +1348,26 @@
       beginLevel(3, true);
       return this.snapshot();
     },
+    forceGameOver() {
+      lives = 0;
+      player.live = false;
+      thrustOn = false;
+      mode = "gameover";
+      return this.snapshot();
+    },
+    setPhone(v) {
+      phoneOverride = (v === null || v === undefined) ? null : !!v;
+      isPhone = isPhoneDevice();
+      return isPhone;
+    },
+    killNow(cause) {
+      player.invuln = 0;
+      player.live = true;
+      killPlayer(cause || "test");
+      return this.snapshot();
+    },
+    continueLevelNow() { continueLevel(); return this.snapshot(); },
+    restartGameNow() { restartGame(); return this.snapshot(); },
     startMoonFinale() {
       level = 3;
       startEnding();
@@ -1576,6 +1606,7 @@
   let mode = "title"; // title, playing, dying, gameover, win, pause, levelintro, arrival, briefing, cutscene
   let worldX = 0;
   let score = 0;
+  let levelStartScore = 0;
   let lives = MAX_LIVES;
   let timeLeft = START_TIME;
   let destPoint = 1;
@@ -4383,6 +4414,23 @@
     drawText(g, "CLEAR THE SECTORS TO REACH THE SHIP", IW / 2, 198, C.hudDim, 1, "center");
   }
 
+  function drawGameOverPanel(g) {
+    const levelName = "LEVEL " + level;
+    fillRect(g, 40, 54, 304, 108, "rgba(0,0,0,0.78)");
+    fillRect(g, 40, 54, 304, 1, C.accent);
+    fillRect(g, 40, 161, 304, 1, C.accent);
+    drawTextShadow(g, "GAME OVER", IW / 2, 64, C.hud, 2, "center");
+    drawText(g, "SCORE " + String(Math.floor(score)).padStart(6, "0"), IW / 2, 88, C.accent, 1, "center");
+    const go = (frame % 40 < 26) ? C.warning : C.hud;
+    if (isPhone) {
+      drawText(g, "TAP LEFT: CONTINUE " + levelName, IW / 2, 112, go, 1, "center");
+      drawText(g, "TAP RIGHT: RESTART GAME", IW / 2, 128, C.hud, 1, "center");
+    } else {
+      drawText(g, "ENTER: CONTINUE " + levelName, IW / 2, 112, go, 1, "center");
+      drawText(g, "R: RESTART GAME", IW / 2, 128, C.hud, 1, "center");
+    }
+  }
+
   function drawCenterPanel(g, title, sub, flashLine) {
     fillRect(g, 70, 70, 244, 70, "rgba(0,0,0,0.7)");
     fillRect(g, 70, 70, 244, 1, C.accent);
@@ -4412,7 +4460,7 @@
       if (mode === "pause") {
         drawCenterPanel(ctx, "PAUSED", "M MUTE", isPhone ? "TAP TO CONTINUE" : "PRESS P OR ENTER");
       } else if (mode === "gameover") {
-        drawCenterPanel(ctx, "GAME OVER", "SCORE " + Math.floor(score), isPhone ? "TAP TO CONTINUE" : "PRESS ENTER");
+        drawGameOverPanel(ctx);
       } else if (mode === "win") {
         // ending tableau is the whole scene (drawn in the branch below via drawEndingScene)
       } else if (mode === "levelintro") {
@@ -4440,6 +4488,7 @@
   function beginLevel(n, keepScore) {
     level = n;
     resetCourse(!!keepScore);
+    levelStartScore = score;
     thrustOn = false;
     thrustTime = levelThrustBudget();
     pendingThrustEngage = false;
@@ -4474,6 +4523,25 @@
     if (level === 3) resetFinale();
     SFX.ensure();
     SFX.win();
+  }
+
+  function continueLevel() {
+    // Restart the current level from the beginning. Lives and fuel refill;
+    // score returns to whatever it was when this level started (0 on Level 1
+    // of a new game, or the carry-in total when you arrived at Level 2 or 3).
+    const n = level < 1 ? 1 : (level > 3 ? 3 : level);
+    const saved = levelStartScore;
+    SFX.ensure();
+    SFX.start();
+    beginLevel(n, false);
+    score = saved;
+    levelStartScore = saved;
+    SFX.startMusic(0.35);
+  }
+
+  function restartGame() {
+    wantedLevel = 1;
+    startGame();
   }
 
   function startGame() {
@@ -4533,10 +4601,14 @@
     } else if (mode === "dying") {
       updateDying();
     } else if (mode === "gameover") {
-      if (input.startPress || input.jumpPress) {
-        wantedLevel = 1;
-        startGame();
-      }
+      // Enter / Space / phone left: continue this level.
+      // R / phone right: start the whole game over from Level 1.
+      const wantContinue = isPhone
+        ? (input.jumpPress || input.startPress)
+        : (input.startPress || input.jumpPress);
+      const wantRestart = isPhone ? input.firePress : input.restartPress;
+      if (wantRestart) restartGame();
+      else if (wantContinue) continueLevel();
     } else if (mode === "win") {
       if (level === 3) {
         updateFinale();
