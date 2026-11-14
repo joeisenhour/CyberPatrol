@@ -166,10 +166,10 @@
   const FORWARD_SHOT_Y = 6; // px above the vehicle's feet; just above ground, at rock height
   const HEAD_W = 19, HEAD_H = 26;
   // Face 1 fills the 19x26 box and uses the original mouth fractions so
-  // Levels 1 and 2 play exactly as before. Face 2 (embedded, reserved for
-  // a future Level 3) is uniformly scaled so the eyes/nose/mouth region
-  // matches Face 1; hair may extend past the box. Mouths for Face 2 are
-  // game pixels from the actor's top-left.
+  // Levels 1 and 2 play exactly as before. Face 2 is used only on Level 3
+  // and is uniformly scaled so the eyes/nose/mouth region matches Face 1;
+  // hair may extend past the box. Mouths for Face 2 are game pixels from
+  // the actor's top-left.
   const HEAD_MOUTH_X = 0.59, HEAD_MOUTH_Y = 0.69;
   const HEAD1_MOUTH_X = HEAD_W * HEAD_MOUTH_X, HEAD1_MOUTH_Y = HEAD_H * HEAD_MOUTH_Y;
   const HEAD2_DRAW_W = 21.1310, HEAD2_DRAW_H = 25.0206;
@@ -238,6 +238,388 @@
 
   const PAL_L1 = { far: "#2a1410", farHi: "#3c1e18", mid: "#3e1c16", midHi: "#542820", near: "#4e261a", nearHi: "#6a3422", city: "#1a0c0a", haze: "#1a0e0c", band: "#241410" };
   const PAL_L2 = { far: "#261210", farHi: "#3a1a16", mid: "#3a1a16", midHi: "#4e221c", near: "#4a2218", nearHi: "#62301e", city: "#160a08", haze: "#180c0a", band: "#20120e" };
+
+
+  const SHIP_WORLD_X = CP_SPACING * CP_COUNT + 80;
+  const L3_TIME = L1_TIME;
+  const L3_THRUST = L2_THRUST;
+  const PAL_L3 = {
+    far: "#3a3c42", farHi: "#5a5e66",
+    mid: "#2a2c32", midHi: "#3e4248",
+    near: "#202226", nearHi: "#32363c",
+    city: "#14161a", haze: "#101218", band: "#1a1c22"
+  };
+  const MOON_GROUND = ["#b4b8c0", "#969aa2", "#7a7e86", "#5c6068", "#3e4248", "#24262a"];
+  const MOON_LIP = "#c8ccd4";
+  const MOON_CRATER = "#14161a";
+  const MOON_CRATER_WALL = "#5a6068";
+  const MOON_ROCK = ["#9aa0a8", "#6a7078", "#1a1c20", "#d8dce2"];
+  const MOON_ROCK_OUT = "#101214";
+  const MOON_ROCK_SH = "#2a2c30";
+
+  function terrainPal() { return level === 3 ? PAL_L3 : (level === 2 ? PAL_L2 : PAL_L1); }
+  function groundCols() { return level === 3 ? MOON_GROUND : C.ground; }
+  function lipCol() { return level === 3 ? MOON_LIP : C.lip; }
+  function craterCol() { return level === 3 ? MOON_CRATER : C.crater; }
+  function craterWallCol() { return level === 3 ? MOON_CRATER_WALL : C.craterWall; }
+  function rockCols() { return level === 3 ? MOON_ROCK : C.rock; }
+  function rockOutCol() { return level === 3 ? MOON_ROCK_OUT : C.rockOut; }
+  function rockShCol() { return level === 3 ? MOON_ROCK_SH : C.rockSh; }
+  function thrustLevel() { return level === 2 || level === 3; }
+  function levelTimeBudget() { return (level === 2 ? L2_TIME : (level === 3 ? L3_TIME : L1_TIME)); }
+  function levelThrustBudget() { return thrustLevel() ? (level === 3 ? L3_THRUST : L2_THRUST) : 0; }
+  function storyAdvancePressed() { return input.startPress || input.jumpPress || input.firePress; }
+
+  function truckPal() {
+    if (level !== 3) {
+      return { body: C.steel, hi: C.steelHi, mid: C.steelMid, lo: C.steelLo, clad: C.clad, hub: C.hub, edge: C.steelHi };
+    }
+    // Very dark gray body, near-black accents, a pale edge so it reads on the moon.
+    return {
+      body: "#2c3036",
+      hi: "#3e444c",
+      mid: "#1a1c20",
+      lo: "#101214",
+      clad: "#0a0b0d",
+      hub: "#3a3e44",
+      edge: "#8a929c"
+    };
+  }
+
+  // Boarding cutscene timings (frames at 60 Hz)
+  const CUT = {
+    RAMP_START: 16,
+    RAMP_END: 88,
+    OPT_START: 96,
+    OPT_END: 170,
+    CAR_START: 180,
+    CAR_END: 270,
+    CLOSE_START: 276,
+    CLOSE_END: 324,
+    BLAST_START: 336,
+    BLAST_END: 500,
+    DONE: 530
+  };
+
+  let story = null;
+  function resetStory() {
+    story = {
+      cutTimer: 0,
+      shipLift: 0,
+      rampT: 0,
+      optVisible: true,
+      optFlag: true,
+      optX: 0,
+      optY: 0,
+      optWalk: 0,
+      carCinematic: false,
+      carX: 0,
+      carY: 0,
+      carScale: 1,
+      hidePlayer: false,
+      hatch: false,
+      flame: 0
+    };
+  }
+  resetStory();
+
+  function startArrival() {
+    mode = "arrival";
+    player.invuln = 0;
+    player.live = true;
+    player.air = 0;
+    player.onGround = true;
+    player.jumpV = 0;
+    thrustOn = false;
+    pendingThrustEngage = false;
+    ufos = [];
+    bombs = [];
+    bullets = [];
+    if (timeLeft < 20) timeLeft = 20;
+    destPoint = CP_COUNT;
+    resetStory();
+    generateUntil(SHIP_WORLD_X + 400);
+  }
+
+  function startBriefing() {
+    mode = "briefing";
+    player.speed = 0;
+    player.air = 0;
+    player.onGround = true;
+    thrustOn = false;
+    story.cutTimer = 0;
+  }
+
+  function startBoarding() {
+    mode = "cutscene";
+    story.cutTimer = 0;
+    story.shipLift = 0;
+    story.rampT = 0;
+    story.optVisible = true;
+    story.optFlag = true;
+    story.carCinematic = false;
+    story.hidePlayer = false;
+    story.hatch = false;
+    story.flame = 0;
+    const optWorld = SHIP_WORLD_X - 38;
+    story.optX = optWorld;
+    story.optY = GROUND_Y;
+    story.carX = worldX + player.sx;
+    story.carY = GROUND_Y;
+    story.carScale = 1;
+  }
+
+  function beginMoon() {
+    beginLevel(3, true);
+  }
+
+  function rampPivot() {
+    return { x: SHIP_WORLD_X, y: GROUND_Y - 22 };
+  }
+  function rampLength() { return 52; }
+  function rampAngle(t) {
+    // 0 = stowed almost vertical against the hull; 1 = lowered to the ground, running left.
+    const up = -Math.PI * 0.52;
+    const down = -Math.PI * 0.13;
+    return up + (down - up) * t;
+  }
+  function rampEnd(t) {
+    const p = rampPivot();
+    const a = rampAngle(t);
+    return { x: p.x + Math.cos(a) * rampLength(), y: p.y + Math.sin(a) * rampLength() };
+  }
+  function pointOnRamp(t, along) {
+    const p = rampPivot();
+    const e = rampEnd(t);
+    const u = Math.max(0, Math.min(1, along));
+    return { x: p.x + (e.x - p.x) * u, y: p.y + (e.y - p.y) * u };
+  }
+
+  function updateArrival() {
+    player.invuln = 9999;
+    const stopAt = SHIP_WORLD_X - vehW() - 18;
+    const px = worldX + player.sx;
+    const remain = stopAt - (px + vehW());
+    if (remain > 2) {
+      const want = remain > 40 ? Math.min(player.speed, 0.85) : 0.28;
+      player.speed += (want - player.speed) * 0.12;
+      if (player.speed < 0.25) player.speed = 0.25;
+      worldX += player.speed;
+      generateUntil(worldX + IW + 200);
+    } else {
+      player.speed = 0;
+      startBriefing();
+    }
+    updateSuspension(false);
+  }
+
+  function updateBriefing() {
+    player.speed = 0;
+    player.air = 0;
+    story.cutTimer++;
+    updateSuspension(false);
+    if (story.cutTimer > 40 && storyAdvancePressed()) startBoarding();
+  }
+
+  function updateBoarding() {
+    story.cutTimer++;
+    const t = story.cutTimer;
+    if (t >= CUT.RAMP_START && t <= CUT.RAMP_END) {
+      story.rampT = (t - CUT.RAMP_START) / (CUT.RAMP_END - CUT.RAMP_START);
+      story.hatch = story.rampT > 0.35;
+    } else if (t > CUT.RAMP_END && t < CUT.CLOSE_START) {
+      story.rampT = 1;
+      story.hatch = true;
+    }
+    if (t >= CUT.CLOSE_START && t <= CUT.CLOSE_END) {
+      story.rampT = 1 - (t - CUT.CLOSE_START) / (CUT.CLOSE_END - CUT.CLOSE_START);
+      story.hatch = story.rampT > 0.2;
+    } else if (t > CUT.CLOSE_END) {
+      story.rampT = 0;
+      story.hatch = false;
+    }
+
+    if (t === CUT.OPT_START) story.optFlag = false;
+    if (t >= CUT.OPT_START && t <= CUT.OPT_END) {
+      const u = (t - CUT.OPT_START) / (CUT.OPT_END - CUT.OPT_START);
+      const pt = pointOnRamp(story.rampT, 1 - u);
+      story.optX = pt.x;
+      story.optY = pt.y;
+      story.optWalk = t;
+      story.optVisible = u < 0.96;
+    } else if (t > CUT.OPT_END) {
+      story.optVisible = false;
+    }
+
+    if (t === CUT.CAR_START) {
+      story.carCinematic = true;
+      story.hidePlayer = true;
+      story.carX = worldX + player.sx;
+      story.carY = GROUND_Y;
+      story.carScale = 1;
+    }
+    if (t >= CUT.CAR_START && t <= CUT.CAR_END) {
+      const u = (t - CUT.CAR_START) / (CUT.CAR_END - CUT.CAR_START);
+      // Car approaches the foot, then climbs; shrink as it enters the hatch.
+      if (u < 0.22) {
+        const foot = rampEnd(story.rampT);
+        const x0 = worldX + player.sx;
+        story.carX = x0 + (foot.x - vehW() * 0.55 - x0) * (u / 0.22);
+        story.carY = GROUND_Y;
+        story.carScale = 1;
+      } else {
+        const v = (u - 0.22) / 0.78;
+        const pt2 = pointOnRamp(story.rampT, 1 - v);
+        story.carX = pt2.x - vehW() * 0.55 * (1 - v * 0.55);
+        story.carY = pt2.y;
+        story.carScale = 1 - 0.55 * v;
+      }
+      story.carCinematic = true;
+      story.hidePlayer = true;
+    }
+    if (t > CUT.CAR_END) {
+      story.carCinematic = false;
+      story.hidePlayer = true;
+    }
+
+    if (t >= CUT.BLAST_START) {
+      const u = Math.min(1, (t - CUT.BLAST_START) / (CUT.BLAST_END - CUT.BLAST_START));
+      // Ease-in lift
+      story.shipLift = u * u * 230;
+      story.flame = 1;
+      shake = 3 + u * 6;
+      if (t === CUT.BLAST_START) {
+        if (typeof SFX.explode === "function") SFX.explode();
+        if (typeof SFX.thrust === "function") SFX.thrust();
+      }
+      if (t % 5 === 0 && typeof SFX.noise === "function") SFX.noise(0.08, 0.05, 400);
+      // exhaust puffs in world space
+      if (t % 2 === 0) {
+        const sx = SHIP_WORLD_X + 14;
+        const sy = GROUND_Y - story.shipLift + 2;
+        particles.push({
+          x: sx + (Math.random() - 0.5) * 16,
+          y: sy,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: 0.8 + Math.random() * 1.4,
+          life: 18 + Math.random() * 14,
+          max: 28,
+          color: Math.random() < 0.5 ? "#f06810" : "#c8c8c8",
+          size: Math.random() < 0.4 ? 2 : 1,
+          g: 0.02
+        });
+      }
+    }
+    if (t >= CUT.DONE || (t > 36 && storyAdvancePressed())) {
+      shake = 0;
+      beginMoon();
+      return;
+    }
+    updateSuspension(false);
+    // particles
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += p.g || 0;
+      p.life--;
+    }
+  }
+  function drawRamp(g, t) {
+    if (t <= 0.02) return;
+    const p = rampPivot();
+    const e = rampEnd(t);
+    const sx0 = Math.round(p.x - worldX), sy0 = Math.round(p.y);
+    const sx1 = Math.round(e.x - worldX), sy1 = Math.round(e.y);
+    g.strokeStyle = "#4a4e54";
+    g.lineWidth = 4;
+    g.beginPath();
+    g.moveTo(sx0, sy0);
+    g.lineTo(sx1, sy1);
+    g.stroke();
+    g.strokeStyle = "#8a9098";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(sx0, sy0 - 1);
+    g.lineTo(sx1, sy1 - 1);
+    g.stroke();
+    g.lineWidth = 1;
+    // hinge block
+    fillRect(g, sx0 - 2, sy0 - 3, 5, 6, "#2c3036");
+    fillRect(g, sx0 - 2, sy0 - 3, 5, 1, "#6a7078");
+  }
+
+  function drawShipHatch(g, open) {
+    if (!open) return;
+    const sx = Math.round(SHIP_WORLD_X - worldX);
+    const y = GROUND_Y - 28;
+    fillRect(g, sx - 1, y, 7, 20, "#0a0b0d");
+    fillRect(g, sx - 1, y, 7, 1, "#6a7078");
+    fillRect(g, sx - 1, y, 1, 20, "#3a3e44");
+  }
+
+  function drawShipExhaust(g, lift) {
+    if (lift <= 0 && story.flame <= 0) return;
+    const sx = Math.round(SHIP_WORLD_X - worldX) + 4;
+    const by = GROUND_Y - lift + 2;
+    const flick = frame % 4;
+    const h = 14 + (flick * 3) + Math.min(22, lift * 0.12);
+    fillPoly(g, [[sx + 6, by], [sx - 2, by + h], [sx + 10, by + h + 4], [sx + 20, by + h], [sx + 18, by]], "#c04008");
+    fillPoly(g, [[sx + 8, by], [sx + 2, by + h * 0.7], [sx + 10, by + h * 0.85], [sx + 16, by + h * 0.7], [sx + 16, by]], "#f0a020");
+    fillPoly(g, [[sx + 10, by], [sx + 7, by + h * 0.45], [sx + 14, by + h * 0.5], [sx + 14, by]], "#fff4c0");
+  }
+
+  function drawStoryActors(g) {
+    if (!(level === 2 && (mode === "arrival" || mode === "briefing" || mode === "cutscene" || (mode === "playing" && worldX + IW > SHIP_WORLD_X - 20)))) return;
+    const lift = (mode === "cutscene") ? story.shipLift : 0;
+    const sx = Math.round(SHIP_WORLD_X - worldX);
+    if (sx > -40 && sx < IW + 40) {
+      if (mode === "cutscene") drawShipExhaust(g, lift);
+      drawStarship(g, sx, GROUND_Y - lift);
+      if (mode === "cutscene" || mode === "briefing" || mode === "arrival") {
+        drawShipHatch(g, story.hatch);
+        drawRamp(g, story.rampT);
+      }
+    }
+    if (story.optVisible && (mode === "arrival" || mode === "briefing" || mode === "cutscene")) {
+      const ox = Math.round(((mode === "cutscene") ? story.optX : (SHIP_WORLD_X - 38)) - worldX);
+      const oy = (mode === "cutscene") ? story.optY : GROUND_Y;
+      if (ox > -20 && ox < IW + 20) {
+        drawOptimus(g, ox, Math.round(oy), { walk: mode === "cutscene" ? story.optWalk : 0 });
+        if (story.optFlag) drawFlag(g, ox + 13, Math.round(oy) - 36, Math.floor(frame / 10) % 3);
+      }
+    }
+    if (mode === "cutscene" && story.carCinematic) {
+      const csx = story.carX - worldX;
+      const csz = story.carScale;
+      g.save();
+      g.translate(csx, story.carY);
+      g.scale(csz, csz);
+      g.translate(0, 0);
+      drawRoadster(g, 0, 0, {
+        air: 0, frontS: player.frontS, rearS: player.rearS, pitch: -story.rampT * 0.22,
+        muzzle: 0, onGround: false, blink: false, dead: false
+      });
+      g.restore();
+    }
+  }
+
+  function drawBriefingOverlay(g) {
+    if (mode !== "briefing") return;
+    fillRect(g, 28, 18, 328, 92, "rgba(0,0,0,0.78)");
+    fillRect(g, 28, 18, 328, 1, C.accent);
+    fillRect(g, 28, 109, 328, 1, C.accent);
+    const titleCol = (frame % 40 < 24) ? C.warning : C.hud;
+    drawTextShadow(g, "YOU MADE IT!", IW / 2, 24, titleCol, 2, "center", "#101018");
+    drawText(g, "A DISTRESS BEACON JUST LIT THE", IW / 2, 48, C.hud, 1, "center");
+    drawText(g, "FAR SIDE OF THE MOON. THE OUTPOST", IW / 2, 60, C.hud, 1, "center");
+    drawText(g, "IS OUT OF AIR  -  AND OUT OF TIME.", IW / 2, 72, C.hud, 1, "center");
+    drawText(g, "WE LEAVE MARS AT ONCE.", IW / 2, 88, C.accent, 1, "center");
+    if (story.cutTimer > 40) {
+      const go = (frame % 40 < 22) ? C.warning : C.hudDim;
+      drawText(g, isPhone ? "TAP TO LAUNCH" : "PRESS ENTER TO LAUNCH", IW / 2, 118, go, 1, "center");
+    }
+  }
 
   const game = document.createElement("canvas");
   game.width = IW;
@@ -368,8 +750,8 @@
   const latch = new Set();
   const pads = { slow: false, fast: false, jump: false, fire: false, start: false, thrust: false };
   let pointerStartLatch = false;
-  const input = { slow: false, fast: false, jump: false, jumpPress: false, fire: false, firePress: false, startPress: false, mutePress: false, pausePress: false, thrustPress: false, downPress: false, level2Press: false, endingPress: false };
-  let prevJump = false, prevFire = false, prevStart = false, prevMute = false, prevPause = false, prevThrust = false, prevDown = false, prevLevel2 = false, prevEnding = false;
+  const input = { slow: false, fast: false, jump: false, jumpPress: false, fire: false, firePress: false, startPress: false, mutePress: false, pausePress: false, thrustPress: false, downPress: false, level2Press: false, level3Press: false, endingPress: false };
+  let prevJump = false, prevFire = false, prevStart = false, prevMute = false, prevPause = false, prevThrust = false, prevDown = false, prevLevel2 = false, prevLevel3 = false, prevEnding = false;
 
   const jumpSet = new Set(["arrowup", "up", "w", " ", "space", "spacebar"]);
   const fireSet = new Set(["z", "x", "f", "control", "ctrl", "shift", "j"]);
@@ -492,6 +874,7 @@
     const thrustDown = anyDown(thrustSet);
     input.thrustPress = !prevThrust && (thrustDown || anyLatch(thrustSet));
     input.level2Press = !prevLevel2 && (!!keys["2"] || latch.has("2"));
+    input.level3Press = !prevLevel3 && (!!keys["3"] || latch.has("3"));
     input.endingPress = !prevEnding && (!!(keys["e"] || keys["E"]) || latch.has("e"));
     prevJump = jumpDown;
     prevFire = fireDown;
@@ -501,6 +884,7 @@
     prevThrust = thrustDown;
     prevDown = downDown;
     prevLevel2 = !!keys["2"];
+    prevLevel3 = !!keys["3"];
     prevEnding = !!(keys["e"] || keys["E"]);
     latch.clear();
     // clear momentary gamepad buttons (touch .held persists via pads)
@@ -647,7 +1031,7 @@
     },
     _wantedTrack() {
       if (mode === "title") return "title";
-      return level === 2 ? "level2" : "level1";
+      return level >= 2 ? "level2" : "level1";
     },
     _decodeBase64(b64) {
       const bin = atob(b64);
@@ -797,7 +1181,12 @@
         headSpawned: headsSpawned, headsSpawned,
         air: player.air, onGround: player.onGround, jumpV: player.jumpV,
         live: player.live, thrustOn, thrustTime, fuelEmptyHintTimer, pendingThrustEngage,
-        shots: bullets.filter((b) => b.live).length, speed: player.speed
+        shots: bullets.filter((b) => b.live).length, speed: player.speed,
+        cutTimer: story ? story.cutTimer : 0,
+        rampT: story ? story.rampT : 0,
+        shipLift: story ? story.shipLift : 0,
+        hidePlayer: !!(story && story.hidePlayer),
+        carCinematic: !!(story && story.carCinematic)
       };
     },
     setThrustTime(t) {
@@ -892,6 +1281,114 @@
         rocks: rocks.filter((r) => r.x >= a && r.x <= b).map((r) => ({ x: r.x, w: r.w, h: r.h, kind: r.kind, live: r.live })),
         craters: craters.filter((c) => c.x >= a && c.x <= b).map((c) => ({ x: c.x, w: c.w, depth: c.depth }))
       };
+    },
+    shipWorldX() { return SHIP_WORLD_X; },
+    story() { return story ? Object.assign({ mode, level, worldX, playerSx: player.sx }, story) : null; },
+    placeAtShip() {
+      const stopAt = SHIP_WORLD_X - vehW() - 18;
+      player.sx = 72;
+      worldX = stopAt - vehW() - player.sx;
+      player.speed = 0;
+      player.air = 0;
+      player.onGround = true;
+      player.live = true;
+      player.invuln = 0;
+      destPoint = CP_COUNT;
+      for (let i = 0; i < checkpoints.length; i++) checkpoints[i].got = true;
+      generateUntil(SHIP_WORLD_X + 400);
+      return { worldX, shipSx: SHIP_WORLD_X - worldX };
+    },
+    startArrivalFromL2() {
+      beginLevel(2, false);
+      mode = "playing";
+      this.placeAtShip();
+      startArrival();
+      return this.snapshot();
+    },
+    startBriefingNow() {
+      if (level !== 2) beginLevel(2, false);
+      this.placeAtShip();
+      startBriefing();
+      story.cutTimer = 50;
+      return this.snapshot();
+    },
+    seekCutscene(t) {
+      if (mode !== "cutscene") {
+        if (level !== 2) beginLevel(2, false);
+        this.placeAtShip();
+        startBoarding();
+      }
+      let guard = 0;
+      while (story.cutTimer < t && mode === "cutscene" && guard < 800) {
+        updateBoarding();
+        frame++;
+        guard++;
+      }
+      return this.snapshot();
+    },
+    beginMoon() {
+      beginLevel(3, true);
+      return this.snapshot();
+    },
+    advanceFrames(n) {
+      const N = Math.max(0, n | 0);
+      for (let i = 0; i < N; i++) tick(STEP / 1000);
+      return this.snapshot();
+    },
+    skipIntro() {
+      if (mode === "levelintro") {
+        player.speed = player.defaultSpeed;
+        mode = "playing";
+        introTimer = 0;
+      }
+      return this.snapshot();
+    },
+    spawnNaturalHead(sx, y) {
+      testNextHeadVariant = 0;
+      spawnUfo(0, "head");
+      const u = ufos[ufos.length - 1];
+      if (sx != null) u.x = worldX + sx;
+      if (y != null) u.y = y;
+      u.vx = 0;
+      u.bombCd = 10000;
+      u.enteredFrame = -1;
+      u.shotsFired = 0;
+      return { variant: u.headVariant, x: u.x, y: u.y, sx: u.x - worldX };
+    },
+    autoPlayGround(maxFrames) {
+      this.skipIntro();
+      player.invuln = 0;
+      player.live = true;
+      this.clearDeaths();
+      const startLevel = level;
+      let i = 0;
+      for (i = 0; i < maxFrames; i++) {
+        ufos = [];
+        bombs = [];
+        const nose = worldX + player.sx + vehW();
+        const look = 180;
+        let need = false;
+        for (let r = 0; r < rocks.length; r++) {
+          const o = rocks[r];
+          if (!o.live) continue;
+          if (o.x + o.w > worldX + player.sx + 4 && o.x < nose + look) need = true;
+        }
+        for (let c = 0; c < craters.length; c++) {
+          const o = craters[c];
+          const left = o.x - o.w * 0.5, right = o.x + o.w * 0.5;
+          if (right > worldX + player.sx && left < nose + look) need = true;
+        }
+        if (thrustLevel() && thrustTime > 0 && player.live) {
+          if (need && !thrustOn) latch.add("arrowup");
+          else if (!need && thrustOn) latch.add("arrowdown");
+        } else if (need && player.onGround && player.live) {
+          latch.add("arrowup");
+        }
+        tick(STEP / 1000);
+        if (mode === "dying" || mode === "gameover") break;
+        if (mode === "win" || mode === "arrival" || mode === "briefing" || level !== startLevel) break;
+      }
+      return Object.assign(this.snapshot(), { frames: i, deaths: deathLog.slice(), startLevel });
     }
   };
   window.__cyberAudio = {
@@ -1049,7 +1546,7 @@
   }
 
   /* ---------------- world / state ---------------- */
-  let mode = "title"; // title, playing, dying, gameover, win, pause, levelintro
+  let mode = "title"; // title, playing, dying, gameover, win, pause, levelintro, arrival, briefing, cutscene
   let worldX = 0;
   let score = 0;
   let lives = MAX_LIVES;
@@ -1129,7 +1626,8 @@
   try {
     const q = new URLSearchParams(location.search || "");
     const v = parseInt(q.get("level") || "1", 10);
-    if (v === 2) wantedLevel = 2;
+    if (v === 3) wantedLevel = 3;
+    else if (v === 2) wantedLevel = 2;
     const en = (q.get("ending") || "").toLowerCase();
     if (en === "1" || en === "true") wantedEnding = true;
     const hd = (q.get("head") || "").toLowerCase();
@@ -1167,18 +1665,14 @@
     };
   }
   function pickHeadVariant() {
-    // Test hook wins so a future Level 3 can be previewed without a real L3.
+    // Test hook wins so verification can force a face on any level.
     if (testNextHeadVariant === 1 || testNextHeadVariant === 2) {
       const v = testNextHeadVariant;
       testNextHeadVariant = 0;
       return v;
     }
-    // Face 2 is reserved for a future Level 3 (not in the game yet).
-    // Levels 1 and 2 always use the original face.
-    if (level < 3) return 1;
-    // On Level 3+, the first appearance is always Face 1; later ones flip a coin.
-    if (headsSpawned === 0) return 1;
-    return Math.random() < 0.5 ? 1 : 2;
+    // Level 3 always uses Face 2; Levels 1 and 2 always use Face 1.
+    return level >= 3 ? 2 : 1;
   }
 
   function destIndex() {
@@ -1292,10 +1786,10 @@
       lives = MAX_LIVES;
     }
     worldX = 0;
-    timeLeft = (level === 2 ? L2_TIME : L1_TIME);
+    timeLeft = levelTimeBudget();
     destPoint = 1;
     thrustOn = false;
-    thrustTime = (level === 2 ? L2_THRUST : 0);
+    thrustTime = levelThrustBudget();
     pendingThrustEngage = false;
     lastCheckpoint = 0;
     genX = 280;
@@ -1313,10 +1807,11 @@
     flash = 0;
     shake = 0;
     hintTimer = 240;
-    thrustHintTimer = (level === 2 ? 240 : 0);
+    thrustHintTimer = (thrustLevel() ? 240 : 0);
     fuelEmptyHintTimer = 0;
     headsSpawned = 0;
     testNextHeadVariant = 0;
+    resetStory();
     player.sx = 72;
     player.speed = player.defaultSpeed;
     player.jumpV = 0;
@@ -1555,6 +2050,7 @@
     const blink = opt.blink;
     const dead = opt.dead;
     if (blink) return;
+    const TP = truckPal();
 
     const baseY = groundY - air;
     const fcx = sx + FRONT_WX;
@@ -1607,7 +2103,7 @@
       g.fillRect(Math.round(sx + S(32)), Math.round(baseY - 1), S(44), 1);
     }
 
-    fillPoly(g, R(body), C.steel);
+    fillPoly(g, R(body), TP.body);
 
     // Upper stainless planes: sail (peak to tail) and hood (peak to nose)
     fillPoly(g, R([
@@ -1617,12 +2113,12 @@
       [sx + S(102), Y(S(16))],
       [sx + S(58),  Y(S(22))],
       [sx + S(2),   Y(S(22))]
-    ]), C.steelHi);
+    ]), TP.hi);
 
-    // Lower body stays C.steel (same stainless as the main body). No
+    // Lower body stays TP.body (same stainless as the main body). No
     // steelLo/steelMid skirt or character-line band along the sill.
 
-    // Lower sill is C.steel at the nose-bottom height (Y(S(8))), leaving
+    // Lower sill is TP.body at the nose-bottom height (Y(S(8))), leaving
     // visible clearance above the ground; wheels sit on the ground as before.
 
     // Wheel-well frames only (inside the arch cutouts). The old slanted
@@ -1635,26 +2131,26 @@
       [sx + S(15),  Y(S(17))],
       [sx + S(16),  Y(S(17))],
       [sx + S(13),  Y(S(8))]
-    ]), C.clad);
+    ]), TP.clad);
     fillPoly(g, R([
       [sx + S(15),  Y(S(17))],
       [sx + S(26),  Y(S(17))],
       [sx + S(26),  Y(S(16))],
       [sx + S(15),  Y(S(16))]
-    ]), C.clad);
+    ]), TP.clad);
     // Front arch: thin top lip + inner front wall
     fillPoly(g, R([
       [sx + S(80),  Y(S(17))],
       [sx + S(93),  Y(S(17))],
       [sx + S(93),  Y(S(16))],
       [sx + S(80),  Y(S(16))]
-    ]), C.clad);
+    ]), TP.clad);
     fillPoly(g, R([
       [sx + S(92),  Y(S(17))],
       [sx + S(93),  Y(S(17))],
       [sx + S(96),  Y(S(8))],
       [sx + S(95),  Y(S(8))]
-    ]), C.clad);
+    ]), TP.clad);
 
     // Windshield on the front slope, ahead of the A-pillar
     fillPoly(g, R([
@@ -1692,13 +2188,13 @@
       [sx + S(58),  Y(S(33))],
       [sx + S(58),  Y(S(32))],
       [sx + S(1),   Y(S(24))]
-    ]), C.steelHi);
+    ]), TP.hi);
     fillPoly(g, R([
       [sx + S(58),  Y(S(33))],
       [sx + S(104), Y(S(18))],
       [sx + S(103), Y(S(17))],
       [sx + S(58),  Y(S(32))]
-    ]), C.steelHi);
+    ]), TP.hi);
 
     // B-pillar, just behind the peak
     fillPoly(g, R([
@@ -1706,7 +2202,7 @@
       [sx + S(58),  Y(S(33))],
       [sx + S(58),  Y(S(11))],
       [sx + S(56),  Y(S(11))]
-    ]), C.steelLo);
+    ]), TP.lo);
 
     // C-pillar / cab-bed break
     fillPoly(g, R([
@@ -1714,7 +2210,7 @@
       [sx + S(37),  Y(S(30))],
       [sx + S(37),  Y(S(11))],
       [sx + S(35),  Y(S(11))]
-    ]), C.steelLo);
+    ]), TP.lo);
 
     // A-pillar, raked with the windshield
     fillPoly(g, R([
@@ -1722,16 +2218,16 @@
       [sx + S(77),  Y(S(26))],
       [sx + S(77),  Y(S(11))],
       [sx + S(75),  Y(S(11))]
-    ]), C.steelLo);
+    ]), TP.lo);
 
     // Horizontal tonneau crease on the sail; the old vertical bed seam is
-    // omitted so the bed is unbroken stainless (C.steel from the body fill).
+    // omitted so the bed is unbroken stainless (TP.body from the body fill).
     fillPoly(g, R([
       [sx + S(3),   Y(S(24))],
       [sx + S(35),  Y(S(29))],
       [sx + S(35),  Y(S(28))],
       [sx + S(3),   Y(S(23))]
-    ]), C.steelMid);
+    ]), TP.mid);
 
     // Door handles on the character line (slightly darker silver, not gray)
     fillPoly(g, R([
@@ -1739,13 +2235,13 @@
       [sx + S(70),  Y(S(14))],
       [sx + S(70),  Y(S(13))],
       [sx + S(66),  Y(S(13))]
-    ]), C.hub);
+    ]), TP.hub);
     fillPoly(g, R([
       [sx + S(44),  Y(S(14))],
       [sx + S(48),  Y(S(14))],
       [sx + S(48),  Y(S(13))],
       [sx + S(44),  Y(S(13))]
-    ]), C.hub);
+    ]), TP.hub);
 
     // Front light bar on the leading edge of the wedge
     fillPoly(g, R([
@@ -1775,7 +2271,7 @@
       [sx + S(80),  Y(S(20))],
       [sx + S(80),  Y(S(18))],
       [sx + S(77),  Y(S(18))]
-    ]), C.steelMid);
+    ]), TP.mid);
 
     if (muzzle) {
       fillRect(g, sx + S(104), Y(S(16)), S(5), 2, C.shot2);
@@ -2097,22 +2593,22 @@
   }
 
   function drawLunarHills(g) {
-    // far soft mounds, same shapes, dark reddish lunar sand
-    fillPoly(g, [[-10, 150], [40, 128], [90, 138], [140, 124], [200, 140], [260, 130], [320, 142], [400, 132], [400, 168], [-10, 168]], C.far);
-    fillPoly(g, [[-10, 156], [50, 142], [110, 150], [170, 140], [230, 152], [300, 144], [400, 150], [400, 168], [-10, 168]], C.mid);
+    // far soft mounds, same shapes, gray lunar dust
+    fillPoly(g, [[-10, 150], [40, 128], [90, 138], [140, 124], [200, 140], [260, 130], [320, 142], [400, 132], [400, 168], [-10, 168]], PAL_L3.far);
+    fillPoly(g, [[-10, 156], [50, 142], [110, 150], [170, 140], [230, 152], [300, 144], [400, 150], [400, 168], [-10, 168]], PAL_L3.mid);
   }
 
   function drawLunarGround(g) {
-    fillRect(g, 0, GROUND_Y, IW, IH - GROUND_Y, C.ground[2]);
-    fillRect(g, 0, GROUND_Y, IW, 8, C.ground[0]);
-    fillRect(g, 0, GROUND_Y + 8, IW, 14, C.ground[2]);
-    fillRect(g, 0, GROUND_Y + 22, IW, IH - GROUND_Y - 22, C.ground[4]);
+    fillRect(g, 0, GROUND_Y, IW, IH - GROUND_Y, MOON_GROUND[2]);
+    fillRect(g, 0, GROUND_Y, IW, 8, MOON_GROUND[0]);
+    fillRect(g, 0, GROUND_Y + 8, IW, 14, MOON_GROUND[2]);
+    fillRect(g, 0, GROUND_Y + 22, IW, IH - GROUND_Y - 22, MOON_GROUND[4]);
     // shallow craters
     const craters = [[30, 6, 3], [90, 14, 4], [160, 8, 2], [210, 18, 3], [300, 11, 2], [350, 20, 5], [70, 28, 3]];
     for (let i = 0; i < craters.length; i++) {
       const [x, dy, r] = craters[i];
-      fillCircle(g, x, GROUND_Y + dy, r, C.ground[4]);
-      fillCircle(g, x - 1, GROUND_Y + dy - 1, Math.max(1, r - 2), C.ground[2]);
+      fillCircle(g, x, GROUND_Y + dy, r, MOON_GROUND[4]);
+      fillCircle(g, x - 1, GROUND_Y + dy - 1, Math.max(1, r - 2), MOON_GROUND[2]);
     }
   }
 
@@ -2262,18 +2758,23 @@
 
   // Tesla Optimus Gen 2, original pixel art from the official white/black still.
   // x is the left of the torso; feet sit on groundY. About 24 px tall.
-  function drawOptimus(g, x, groundY) {
+  function drawOptimus(g, x, groundY, opt) {
+    opt = opt || {};
     const foot = groundY;
     const headY = foot - 24;
+    const walk = opt.walk || 0;
+    const step = walk ? (Math.floor(walk / 5) % 2) : 0;
+    const lUp = walk ? (step ? 1 : 0) : 0;
+    const rUp = walk ? (step ? 0 : 1) : 0;
     // legs
-    fillRect(g, x + 1, foot - 10, 3, 6, "#e8e8e4"); // L thigh
-    fillRect(g, x + 6, foot - 10, 3, 6, "#e8e8e4"); // R thigh
-    fillRect(g, x + 1, foot - 5, 3, 1, "#101014");  // knees
-    fillRect(g, x + 6, foot - 5, 3, 1, "#101014");
-    fillRect(g, x + 1, foot - 4, 3, 3, "#d0d0cc"); // shins
-    fillRect(g, x + 6, foot - 4, 3, 3, "#d0d0cc");
-    fillRect(g, x + 0, foot - 1, 4, 2, "#202024"); // feet
-    fillRect(g, x + 6, foot - 1, 4, 2, "#202024");
+    fillRect(g, x + 1, foot - 10 - lUp, 3, 6, "#e8e8e4"); // L thigh
+    fillRect(g, x + 6, foot - 10 - rUp, 3, 6, "#e8e8e4"); // R thigh
+    fillRect(g, x + 1, foot - 5 - lUp, 3, 1, "#101014");  // knees
+    fillRect(g, x + 6, foot - 5 - rUp, 3, 1, "#101014");
+    fillRect(g, x + 1, foot - 4 - lUp, 3, 3, "#d0d0cc"); // shins
+    fillRect(g, x + 6, foot - 4 - rUp, 3, 3, "#d0d0cc");
+    fillRect(g, x + 0, foot - 1 - lUp, 4, 2, "#202024"); // feet
+    fillRect(g, x + 6, foot - 1 - rUp, 4, 2, "#202024");
     // pelvis / black waist / white torso
     fillRect(g, x + 1, foot - 12, 8, 3, "#e8e8e4");
     fillRect(g, x + 2, foot - 14, 6, 2, "#101014");
@@ -2285,10 +2786,17 @@
     fillRect(g, x - 2, foot - 19, 2, 3, "#101014");
     fillRect(g, x - 3, foot - 16, 2, 5, "#e8e8e4");
     fillRect(g, x - 3, foot - 11, 2, 3, "#c8c8c4"); // hand
+    if (walk) {
+      // right arm swings down while walking aboard
+      fillRect(g, x + 10, foot - 19, 2, 3, "#101014");
+      fillRect(g, x + 11, foot - 16, 2, 5, "#e8e8e4");
+      fillRect(g, x + 11, foot - 11, 2, 3, "#c8c8c4");
+    } else {
     // right arm raised, holding the flag
     fillRect(g, x + 10, foot - 19, 2, 2, "#101014");
     fillRect(g, x + 11, foot - 23, 2, 5, "#e8e8e4");
     fillRect(g, x + 11, foot - 25, 2, 2, "#c8c8c4"); // raised hand
+    }
     // neck + glossy black head with cyan visor
     fillRect(g, x + 4, headY + 4, 2, 2, "#101014");
     fillRect(g, x + 2, headY, 6, 5, "#101014");
@@ -2330,6 +2838,25 @@
     drawText(g, text, bx + 4, by + 3, "#101018", 1);
   }
 
+  function drawEndingTruck(g, sx, groundY) {
+    const cnv = document.createElement("canvas");
+    cnv.width = S(110);
+    cnv.height = S(36);
+    const og = cnv.getContext("2d");
+    og.imageSmoothingEnabled = false;
+    drawCybertruck(og, 4, S(34), {
+      air: 0,
+      frontS: player.frontS,
+      rearS: player.rearS,
+      pitch: 0,
+      muzzle: 0,
+      onGround: false
+    });
+    g.imageSmoothingEnabled = false;
+    const dw = S(58), dh = S(20);
+    g.drawImage(cnv, 0, 0, S(110), S(36), Math.round(sx), groundY - dh, dw, dh);
+  }
+
   function drawEndingRoadster(g, sx, groundY) {
     if (!endingCarCanvas) {
       endingCarCanvas = document.createElement("canvas");
@@ -2368,17 +2895,22 @@
     const wave = Math.floor(frame / 10) % 3;
     drawFlag(g, optX + 13, GROUND_Y - 36, wave);
 
-    drawEndingRoadster(g, endingCarX, GROUND_Y);
+    if (level === 3) drawEndingTruck(g, endingCarX, GROUND_Y);
+    else drawEndingRoadster(g, endingCarX, GROUND_Y);
 
     if (endingTimer > 96) {
-      drawTextShadow(g, "CONGRATULATIONS, YOU'VE REACHED THE SHIP!", 132, 6, C.hud, 1, "center", "#101018");
-      drawTextShadow(g, "YOU WIN", 132, 18, C.warning, 2, "center", "#101018");
+      const headline = level === 3
+        ? "CONGRATULATIONS, THE OUTPOST IS OURS!"
+        : "CONGRATULATIONS, YOU'VE REACHED THE SHIP!";
+      const tag = level === 3 ? "MISSION COMPLETE" : "YOU WIN";
+      drawTextShadow(g, headline, 132, 6, C.hud, 1, "center", "#101018");
+      drawTextShadow(g, tag, 132, 18, C.warning, 2, "center", "#101018");
       drawText(g, "SCORE " + String(Math.floor(score)).padStart(6, "0"), 132, 38, C.accent, 1, "center");
       const enterCol = (frame % 40 < 22) ? C.warning : C.hud;
       drawTextShadow(g, isPhone ? "TAP TO PLAY AGAIN" : "PRESS ENTER TO PLAY AGAIN", 132, 50, enterCol, 1, "center", "#101018");
     }
     if (endingTimer > 118) {
-      drawSpeechBubble(g, optX - 18, GROUND_Y - 74, "CONGRATULATIONS!");
+      drawSpeechBubble(g, optX - 18, GROUND_Y - 74, level === 3 ? "OUTPOST SECURE!" : "CONGRATULATIONS!");
     }
   }
 
@@ -2464,46 +2996,50 @@
   }
 
   function drawGround(g) {
+    const G = groundCols();
+    const lip = lipCol();
+    const crater = craterCol();
+    const wall = craterWallCol();
     for (let x = 0; x < IW; x++) {
       const wx = worldX + x;
       const y = Math.round(groundYAt(wx));
       if (y > GROUND_Y + 1) {
         // crater walls + pit
-        g.fillStyle = C.craterWall;
+        g.fillStyle = wall;
         g.fillRect(x, GROUND_Y, 1, y - GROUND_Y);
-        g.fillStyle = C.crater;
+        g.fillStyle = crater;
         g.fillRect(x, y, 1, IH - y);
-        // lip — a light dusty rim so the hole reads against the rust sand
+        // lip — a light dusty rim so the hole reads against the ground
         if (y <= GROUND_Y + 3) {
-          g.fillStyle = C.lip;
+          g.fillStyle = lip;
           g.fillRect(x, GROUND_Y - 1, 1, 2);
         } else {
-          g.fillStyle = C.ground[0];
+          g.fillStyle = G[0];
           g.fillRect(x, y, 1, 1);
         }
         // strata under pit
-        g.fillStyle = C.ground[4];
+        g.fillStyle = G[4];
         g.fillRect(x, Math.min(IH, y + 8), 1, IH);
       } else {
-        g.fillStyle = C.lip;
+        g.fillStyle = lip;
         g.fillRect(x, GROUND_Y, 1, 1);
-        g.fillStyle = C.ground[0];
+        g.fillStyle = G[0];
         g.fillRect(x, GROUND_Y + 1, 1, 2);
-        g.fillStyle = C.ground[1];
+        g.fillStyle = G[1];
         g.fillRect(x, GROUND_Y + 3, 1, 5);
-        g.fillStyle = C.ground[2];
+        g.fillStyle = G[2];
         g.fillRect(x, GROUND_Y + 8, 1, 8);
-        g.fillStyle = C.ground[3];
+        g.fillStyle = G[3];
         g.fillRect(x, GROUND_Y + 16, 1, 10);
-        g.fillStyle = C.ground[4];
+        g.fillStyle = G[4];
         g.fillRect(x, GROUND_Y + 26, 1, 12);
-        g.fillStyle = C.ground[5];
+        g.fillStyle = G[5];
         g.fillRect(x, GROUND_Y + 38, 1, IH);
         // sparse surface pebbles
         const n = (Math.sin(wx * 12.9898 + 78.233) * 43758.5453);
         const f = n - Math.floor(n);
         if (f > 0.92) {
-          g.fillStyle = C.ground[3];
+          g.fillStyle = G[3];
           g.fillRect(x, GROUND_Y - 1, 1, 1);
         }
       }
@@ -2515,31 +3051,34 @@
     const sx = Math.round(r.x - worldX);
     const gy = GROUND_Y;
     if (sx < -20 || sx > IW + 8) return;
+    const RK = rockCols();
+    const out = rockOutCol();
+    const sh = rockShCol();
     if (r.kind === 1) {
       // dark outline, then dusty body, sunlit top, and a ground shadow
       fillPoly(g, [
         [sx - 1, gy], [sx + 3, gy - 9], [sx + 7, gy - 13], [sx + 13, gy - 8], [sx + 15, gy]
-      ], C.rockOut);
+      ], out);
       fillPoly(g, [
         [sx, gy], [sx + 3, gy - 8], [sx + 7, gy - 12], [sx + 12, gy - 7], [sx + 14, gy]
-      ], C.rock[1]);
+      ], RK[1]);
       fillPoly(g, [
         [sx + 3, gy - 8], [sx + 7, gy - 12], [sx + 9, gy - 8], [sx + 5, gy - 6]
-      ], C.rock[3]);
+      ], RK[3]);
       fillPoly(g, [
         [sx, gy], [sx + 4, gy - 3], [sx + 8, gy], [sx, gy]
-      ], C.rockSh);
+      ], sh);
     } else {
       fillPoly(g, [
         [sx - 1, gy], [sx + 2, gy - 7], [sx + 6, gy - 9], [sx + 11, gy - 5], [sx + 11, gy]
-      ], C.rockOut);
+      ], out);
       fillPoly(g, [
         [sx, gy], [sx + 2, gy - 6], [sx + 6, gy - 8], [sx + 10, gy - 4], [sx + 10, gy]
-      ], C.rock[0]);
+      ], RK[0]);
       fillPoly(g, [
         [sx + 2, gy - 6], [sx + 6, gy - 8], [sx + 7, gy - 5], [sx + 3, gy - 4]
-      ], C.rock[3]);
-      fillRect(g, sx + 1, gy - 1, 8, 1, C.rockSh);
+      ], RK[3]);
+      fillRect(g, sx + 1, gy - 1, 8, 1, sh);
     }
   }
 
@@ -2758,7 +3297,7 @@
     // Level 2: while thruster fuel remains, Up (W/Space/touch jump)
     // engages thrusters instead of jumping; Up again or Down cuts them.
     // T stays a toggle alias. When fuel is empty, Up is a normal jump.
-    const canThrust = level === 2 && thrustTime > 0 && player.live;
+    const canThrust = thrustLevel() && thrustTime > 0 && player.live;
     if (canThrust) {
       // pendingThrustEngage: Up was held or used to skip the L2 intro, so
       // the edge was consumed before playing started. Engage once, do not
@@ -2784,7 +3323,7 @@
       SFX.jump();
     }
     let landed = false;
-    const thrusting = level === 2 && thrustOn && thrustTime > 0 && player.live;
+    const thrusting = thrustLevel() && thrustOn && thrustTime > 0 && player.live;
     if (!thrusting && (!player.onGround || player.jumpV < 0)) {
       player.jumpV += GRAVITY;
       player.air -= player.jumpV;
@@ -2803,7 +3342,7 @@
     }
 
     // Rise to and hold jump apex while thrusting; drain flight time
-    if (level === 2 && thrustOn && thrustTime > 0 && player.live) {
+    if (thrustLevel() && thrustOn && thrustTime > 0 && player.live) {
       player.onGround = false;
       landed = false;
       if (player.air < JUMP_APEX - 0.4) {
@@ -2865,11 +3404,16 @@
             beginLevel(2, true);
             return;
           }
+          if (level === 2) {
+            SFX.checkpoint();
+            startArrival();
+            return;
+          }
           startEnding();
           return;
         }
         destPoint = c.n + 1;
-        const budget = (level === 2 ? L2_TIME : L1_TIME);
+        const budget = levelTimeBudget();
         timeLeft = Math.max(42, budget - destIndex() * 2);
         SFX.checkpoint();
         burst(c.x + 8, GROUND_Y - 20, C.accent, 16, 2, 24);
@@ -3113,7 +3657,7 @@
     for (let i = 0; i < MAX_LIVES; i++) {
       const x = 274 + i * 29;
       const on = i < lives;
-      const body = on ? C.steelHi : C.steelDk;
+      const body = on ? (level === 3 ? truckPal().hi : C.steelHi) : C.steelDk;
       const win = on ? C.window : "#101418";
       const tire = on ? C.tire : C.steelDk;
       const lite = on ? C.light : C.steelDk;
@@ -3152,8 +3696,8 @@
     fillRect(g, 4, 15, Math.round(40 * sp), 3, C.accent);
     drawText(g, "SPD", 46, 13, C.hudDim, 1);
 
-    if (level === 2) {
-      const tmax = L2_THRUST;
+    if (thrustLevel()) {
+      const tmax = levelThrustBudget();
       const frac = tmax > 0 ? Math.max(0, thrustTime / tmax) : 0;
       const low = thrustTime <= 4;
       const flashLow = low && (frame % 16 < 8);
@@ -3169,16 +3713,16 @@
 
     if (mode === "playing" && hintTimer > 0 && (hintTimer > 60 || (frame % 20 < 14))) {
       const hint = isPhone
-        ? (level === 2 ? "TAP LEFT: THRUSTERS ON/OFF    TAP RIGHT: FIRE" : "TAP LEFT: JUMP    TAP RIGHT: FIRE")
-        : (level === 2
+        ? (thrustLevel() ? "TAP LEFT: THRUSTERS ON/OFF    TAP RIGHT: FIRE" : "TAP LEFT: JUMP    TAP RIGHT: FIRE")
+        : (thrustLevel()
           ? "ARROWS SPEED   UP: THRUSTERS ON  UP/DOWN: OFF   Z/X/F FIRE"
           : "ARROWS SPEED   UP/SPACE JUMP   Z/X/F FIRE   M MUTE");
       drawTextShadow(g, hint, IW / 2, 22, C.hud, 1, "center");
     }
-    if (mode === "playing" && level === 2 && thrustHintTimer > 0 && fuelEmptyHintTimer <= 0 && (thrustHintTimer > 50 || (frame % 20 < 14))) {
+    if (mode === "playing" && thrustLevel() && thrustHintTimer > 0 && fuelEmptyHintTimer <= 0 && (thrustHintTimer > 50 || (frame % 20 < 14))) {
       drawTextShadow(g, isPhone ? "TAP LEFT: THRUSTERS ON  TAP AGAIN: OFF" : "UP: THRUSTERS ON  UP/DOWN: OFF", IW / 2, 44, C.warning, 1, "center", "#101018");
     }
-    if (mode === "playing" && level === 2 && fuelEmptyHintTimer > 0 && (fuelEmptyHintTimer > 50 || (frame % 20 < 14))) {
+    if (mode === "playing" && thrustLevel() && fuelEmptyHintTimer > 0 && (fuelEmptyHintTimer > 50 || (frame % 20 < 14))) {
       drawTextShadow(g, "FUEL EMPTY - JUMP MODE", IW / 2, 44, C.warning, 1, "center", "#101018");
     }
   }
@@ -3196,13 +3740,14 @@
     g.save();
     g.translate(ox, oy);
 
-    const P = (level === 2 ? PAL_L2 : PAL_L1);
+    const P = terrainPal();
     fillRect(g, -8, -8, IW + 16, IH + 16, C.sky);
     drawStars(g);
+    if (level === 3) drawEndingEarth(g, 58, 40);
     drawMtnLayer(g, worldX * 0.15, 108, 22, P.far, P.farHi, 11, 0);
     drawMtnLayer(g, worldX * 0.32, 124, 26, P.mid, P.midHi, 27, 1.4);
     drawMtnLayer(g, worldX * 0.55, 142, 18, P.near, P.nearHi, 43, 0.8);
-    drawCity(g, worldX * 0.7, 154, P.city);
+    if (level !== 3) drawCity(g, worldX * 0.7, 154, P.city);
     fillRect(g, 0, 154, IW, GROUND_Y - 154, P.haze);
     fillRect(g, 0, 158, IW, GROUND_Y - 158, P.band);
 
@@ -3210,6 +3755,7 @@
 
     for (let i = 0; i < checkpoints.length; i++) drawCheckpoint(g, checkpoints[i]);
     for (let i = 0; i < rocks.length; i++) drawRock(g, rocks[i]);
+    drawStoryActors(g);
 
     // bombs / fireballs
     for (let i = 0; i < bombs.length; i++) {
@@ -3241,17 +3787,17 @@
     for (let i = 0; i < ufos.length; i++) if (ufos[i].live) drawUfo(g, ufos[i]);
 
     const blink = player.invuln > 0 && (frame % 8 < 4);
-    if (mode !== "gameover") {
+    if (mode !== "gameover" && !(story && story.hidePlayer)) {
       drawPlayerVehicle(g, Math.round(player.sx), GROUND_Y, {
         air: player.air,
         frontS: player.frontS,
         rearS: player.rearS,
         pitch: player.pitch,
         muzzle: player.muzzle,
-        blink: mode === "dying" || blink,
+        blink: mode === "dying" || (mode === "playing" && blink),
         dead: mode === "dying",
         onGround: player.onGround,
-        thrust: level === 2 && thrustOn && thrustTime > 0 && player.live
+        thrust: thrustLevel() && thrustOn && thrustTime > 0 && player.live
       });
     }
 
@@ -3309,7 +3855,7 @@
   function render() {
     const jumpPad = document.getElementById("pad-jump");
     if (jumpPad) {
-      jumpPad.textContent = (level === 2 && thrustTime > 0 && (mode === "playing" || mode === "levelintro")) ? "THRUST" : "JUMP";
+      jumpPad.textContent = (thrustLevel() && thrustTime > 0 && (mode === "playing" || mode === "levelintro")) ? "THRUST" : "JUMP";
     }
     ctx.imageSmoothingEnabled = false;
     if (mode === "win") {
@@ -3320,7 +3866,7 @@
       drawTitleOverlay(ctx);
     } else {
       drawScene(ctx);
-      drawHud(ctx);
+      if (mode !== "briefing" && mode !== "cutscene") drawHud(ctx);
       if (mode === "pause") {
         drawCenterPanel(ctx, "PAUSED", "M MUTE", isPhone ? "TAP TO CONTINUE" : "PRESS P OR ENTER");
       } else if (mode === "gameover") {
@@ -3328,9 +3874,13 @@
       } else if (mode === "win") {
         // ending tableau is the whole scene (drawn in the branch below via drawEndingScene)
       } else if (mode === "levelintro") {
-        drawCenterPanel(ctx, "LEVEL 2",
+        drawCenterPanel(ctx, level === 3 ? "THE MOON" : "LEVEL 2",
           isPhone ? "TAP LEFT: THRUSTERS ON/OFF" : "UP: THRUSTERS ON  UP/DOWN: OFF",
           "GET READY");
+      } else if (mode === "briefing") {
+        drawBriefingOverlay(ctx);
+      } else if (mode === "cutscene" && story.cutTimer > 36 && story.cutTimer < CUT.BLAST_START) {
+        drawText(ctx, isPhone ? "TAP TO SKIP" : "PRESS ENTER TO SKIP", IW / 2, 200, C.hudDim, 1, "center");
       }
     }
 
@@ -3349,11 +3899,11 @@
     level = n;
     resetCourse(!!keepScore);
     thrustOn = false;
-    thrustTime = (level === 2 ? L2_THRUST : 0);
+    thrustTime = levelThrustBudget();
     pendingThrustEngage = false;
     hintTimer = 240;
-    // Always show the Level 2 intro (Roadster reveal), including ?level=2 / key 2.
-    if (level === 2) {
+    // L2 Roadster reveal and L3 Moon intro, including hidden ?level= / key shortcuts.
+    if (level === 2 || level === 3) {
       mode = "levelintro";
       introTimer = 150;
       player.speed = player.defaultSpeed;
@@ -3364,7 +3914,9 @@
   }
 
   function startEnding() {
-    level = 2;
+    // Keep Level 3 so the finale can show the dark truck and moon copy.
+    // Hidden E / ?ending=1 still uses the classic Level 2 roadster arrival.
+    if (level !== 3) level = 2;
     mode = "win";
     endingTimer = 0;
     endingCarX = -56;
@@ -3384,7 +3936,7 @@
   function startGame() {
     SFX.ensure();
     SFX.start();
-    const n = (wantedLevel === 2 ? 2 : 1);
+    const n = (wantedLevel === 3 ? 3 : (wantedLevel === 2 ? 2 : 1));
     wantedLevel = 1;
     beginLevel(n, false);
     SFX.startMusic(0.35);
@@ -3405,7 +3957,18 @@
         startGame();
         if (wantedHead) seedHeadDemo();
       }
+      if (input.level3Press) {
+        wantedLevel = 3;
+        startGame();
+        if (wantedHead) seedHeadDemo();
+      }
       if (input.endingPress) startEnding();
+    } else if (mode === "arrival") {
+      updateArrival();
+    } else if (mode === "briefing") {
+      updateBriefing();
+    } else if (mode === "cutscene") {
+      updateBoarding();
     } else if (mode === "levelintro") {
       updateTitle(); // parked bob, no obstacles already cleared on reset
       player.speed = 0.45;
@@ -3415,7 +3978,7 @@
         mode = "playing";
         // Up/W/Space already down (or this press skipped the intro): arm
         // thrusters for the first playing frame so the hold is not eaten.
-        if (level === 2 && thrustTime > 0 && (input.jump || input.jumpPress)) {
+        if (thrustLevel() && thrustTime > 0 && (input.jump || input.jumpPress)) {
           pendingThrustEngage = true;
         }
       }
@@ -3457,7 +4020,7 @@
         startGame();
       }
     }
-    SFX.setPlaying(mode === "playing" || mode === "levelintro" || mode === "title");
+    SFX.setPlaying(mode === "playing" || mode === "levelintro" || mode === "title" || mode === "arrival" || mode === "briefing" || mode === "cutscene");
     frame++;
   }
 

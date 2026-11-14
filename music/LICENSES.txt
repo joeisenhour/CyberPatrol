@@ -28,7 +28,7 @@ License text: https://creativecommons.org/publicdomain/zero/1.0/
    Notes:   Bass-heavy cyberpunk synthwave from the same composer as the Level 2
             theme, a driving counterpart to "Cyber Runner" without duplicating it.
 
-3. Level 2 — "Cyber Runner"
+3. Level 2 (also used later in the game) — "Cyber Runner"
    Author:  ansimuz (Luis Zuno, @ansimuz)
    Source:  https://opengameart.org/content/cyber-runner-music
    License: CC0 1.0 Universal (listed as "CC0" / Creative Commons Zero on the
