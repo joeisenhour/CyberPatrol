@@ -10,7 +10,7 @@ Or open `index.html` in a browser.
 
 Controls: Left/Right speed, Up/W/Space jump, Z/X/F fire, M mute, P/Esc pause, Enter start. On a phone, hold it sideways; tap the left half to jump (or toggle thrusters on level 2) and the right half to fire. Tap to start or continue.
 
-`screenshots/` holds previews; `ref/` holds reference material used for proportions (not used by the game).
+`screenshots/` holds previews; `ref/` holds reference material used for proportions. The original photographic enemy face is embedded in `index.html` (cutout and source in `ref/enemy-head.png` and `ref/enemy-head-src.jpg`). A second face (`ref/enemy-head2.png` and `ref/enemy-head2-src.jpg`) is also embedded, reserved for a future Level 3; Levels 1 and 2 use only the original face.
 
 ## Credits / Licenses
 
