@@ -1031,6 +1031,7 @@
     },
     _wantedTrack() {
       if (mode === "title") return "title";
+      if (mode === "win" && level === 3 && finale && finale.scene === "credits") return "title";
       return level >= 2 ? "level2" : "level1";
     },
     _decodeBase64(b64) {
@@ -1186,7 +1187,14 @@
         rampT: story ? story.rampT : 0,
         shipLift: story ? story.shipLift : 0,
         hidePlayer: !!(story && story.hidePlayer),
-        carCinematic: !!(story && story.carCinematic)
+        carCinematic: !!(story && story.carCinematic),
+        finaleT: finale ? finale.t : 0,
+        finaleScene: finale ? finale.scene : null,
+        finaleLit: finale ? finale.lit : 0,
+        finaleCable: finale ? finale.cableT : 0,
+        finaleSaved: !!(finale && finale.showSaved),
+        finaleFlag: !!(finale && finale.flagPlanted),
+        finalePrompt: !!(finale && finale.showPrompt)
       };
     },
     setThrustTime(t) {
@@ -1328,6 +1336,25 @@
     },
     beginMoon() {
       beginLevel(3, true);
+      return this.snapshot();
+    },
+    startMoonFinale() {
+      level = 3;
+      startEnding();
+      return this.snapshot();
+    },
+    seekFinale(t) {
+      if (!(mode === "win" && level === 3)) {
+        level = 3;
+        startEnding();
+      }
+      let guard = 0;
+      const target = Math.max(0, t | 0);
+      while (finale.t < target && mode === "win" && guard < 2500) {
+        updateFinale({ silent: true });
+        frame++;
+        guard++;
+      }
       return this.snapshot();
     },
     advanceFrames(n) {
@@ -1576,6 +1603,7 @@
   let wantedEnding = false;
   let wantedHead = false;
   let endingCarCanvas = null;
+  let finaleTruckCanvas = null;
 
   const player = {
     sx: 72,
@@ -2880,7 +2908,526 @@
     g.drawImage(endingCarCanvas, 0, 0, S(86), S(30), Math.round(sx), groundY - dh, dw, dh);
   }
 
+
+  const FIN = {
+    DRIVE_END: 140,
+    PLUG_END: 200,
+    POWER_END: 380,
+    SAVED_END: 500,
+    FADE_END: 528,
+    WALK_START: 560,
+    WALK_END: 680,
+    PLANT_END: 740,
+    EARTH_END: 860,
+    CREDITS_FADE: 20
+  };
+  const FIN_TRUCK_PARK = 48;
+  const FIN_OUTPOST_X = 232;
+  const FIN_LIGHTS = 5;
+
+  let finale = null;
+  function resetFinale() {
+    finale = {
+      t: 0,
+      truckX: -70,
+      parked: false,
+      cableT: 0,
+      lit: 0,
+      flicker: true,
+      pulse: false,
+      showSaved: false,
+      fade: 0,
+      scene: "outpost", // outpost | earthrise | credits
+      earthY: GROUND_Y + 24,
+      optVisible: false,
+      optX: 0,
+      optWalk: 0,
+      flagPlanted: false,
+      creditY: IH + 10,
+      showPrompt: false,
+      skipReady: false
+    };
+  }
+  resetFinale();
+
+  function finaleCreditLines() {
+    return [
+      { text: "CYBER PATROL", scale: 3, color: C.light, gap: 22 },
+      { text: "MISSION COMPLETE", scale: 2, color: C.warning, gap: 18 },
+      { text: "SCORE " + String(Math.floor(score)).padStart(6, "0"), scale: 1, color: C.accent, gap: 26 },
+      { text: "THANKS FOR PLAYING, COMMANDER.", scale: 1, color: C.hud, gap: 30 },
+      { text: "MUSIC  CC0", scale: 1, color: C.accent, gap: 18 },
+      { text: "TITLE  GROUND ZERO", scale: 1, color: C.hud, gap: 10 },
+      { text: "CENTURION OF WAR", scale: 1, color: C.hudDim, gap: 16 },
+      { text: "LEVEL 1  CYBER CITY 2-B", scale: 1, color: C.hud, gap: 10 },
+      { text: "ANSIMUZ", scale: 1, color: C.hudDim, gap: 16 },
+      { text: "LEVEL 2  CYBER RUNNER", scale: 1, color: C.hud, gap: 10 },
+      { text: "ANSIMUZ", scale: 1, color: C.hudDim, gap: 36 }
+    ];
+  }
+
+  function applyFinaleTime(t) {
+    finale.t = t;
+    endingTimer = t;
+    if (t < FIN.FADE_END) finale.scene = "outpost";
+    else if (t < FIN.EARTH_END + FIN.CREDITS_FADE) finale.scene = "earthrise";
+    else finale.scene = "credits";
+
+    if (t < FIN.DRIVE_END) {
+      const u = t / FIN.DRIVE_END;
+      finale.truckX = -70 + (FIN_TRUCK_PARK + 70) * (1 - Math.pow(1 - u, 2));
+      finale.parked = false;
+    } else {
+      finale.truckX = FIN_TRUCK_PARK;
+      finale.parked = true;
+    }
+
+    if (t < FIN.DRIVE_END) finale.cableT = 0;
+    else if (t < FIN.PLUG_END) finale.cableT = (t - FIN.DRIVE_END) / (FIN.PLUG_END - FIN.DRIVE_END);
+    else finale.cableT = 1;
+
+    if (t < FIN.PLUG_END) {
+      finale.lit = 0;
+      finale.flicker = true;
+    } else if (t < FIN.POWER_END) {
+      const u = (t - FIN.PLUG_END) / (FIN.POWER_END - FIN.PLUG_END);
+      finale.lit = Math.min(FIN_LIGHTS, Math.floor(u * FIN_LIGHTS) + 1);
+      finale.flicker = finale.lit < FIN_LIGHTS;
+    } else {
+      finale.lit = FIN_LIGHTS;
+      finale.flicker = false;
+    }
+    finale.pulse = t >= FIN.PLUG_END && t < FIN.FADE_END;
+    finale.showSaved = t >= FIN.POWER_END && t < FIN.FADE_END;
+
+    if (t < FIN.SAVED_END) finale.fade = 0;
+    else if (t < FIN.FADE_END) finale.fade = (t - FIN.SAVED_END) / (FIN.FADE_END - FIN.SAVED_END);
+    else if (t < FIN.FADE_END + 18) finale.fade = 1 - (t - FIN.FADE_END) / 18;
+    else if (t < FIN.EARTH_END) finale.fade = 0;
+    else if (t < FIN.EARTH_END + FIN.CREDITS_FADE) finale.fade = (t - FIN.EARTH_END) / FIN.CREDITS_FADE;
+    else finale.fade = 0;
+
+    // Earth rises from behind the rim during the earthrise act
+    const er0 = FIN.FADE_END;
+    const er1 = FIN.PLANT_END + 40;
+    // Rise until the globe crests the far lunar hills, not high in the sky.
+    if (t <= er0) finale.earthY = 152;
+    else if (t < er1) {
+      const u = (t - er0) / (er1 - er0);
+      const e = 1 - Math.pow(1 - u, 2);
+      finale.earthY = 152 - e * 40;
+    } else {
+      finale.earthY = 112;
+    }
+
+    // Optimus steps out of the truck after the fade-in, then plants the flag
+    if (t < FIN.WALK_START) {
+      finale.optVisible = false;
+      finale.flagPlanted = false;
+      finale.optX = FIN_TRUCK_PARK + 36;
+      finale.optWalk = 0;
+    } else if (t < FIN.WALK_END) {
+      const u = (t - FIN.WALK_START) / (FIN.WALK_END - FIN.WALK_START);
+      finale.optVisible = true;
+      finale.optX = (FIN_TRUCK_PARK + 36) + u * 54;
+      finale.optWalk = t;
+      finale.flagPlanted = false;
+    } else {
+      finale.optVisible = true;
+      finale.optX = FIN_TRUCK_PARK + 90;
+      finale.optWalk = 0;
+      finale.flagPlanted = t >= FIN.WALK_END + 8;
+    }
+
+    if (t <= FIN.EARTH_END + FIN.CREDITS_FADE) {
+      finale.creditY = IH + 12;
+      finale.showPrompt = false;
+    } else {
+      const lines = finaleCreditLines();
+      let h = 0;
+      for (let i = 0; i < lines.length; i++) h += 8 * lines[i].scale + lines[i].gap;
+      const scroll = (t - (FIN.EARTH_END + FIN.CREDITS_FADE)) * 0.5;
+      const y = IH + 12 - scroll;
+      const pin = 176 - h;
+      if (y <= pin) {
+        finale.creditY = pin;
+        finale.showPrompt = true;
+      } else {
+        finale.creditY = y;
+        finale.showPrompt = false;
+      }
+    }
+    finale.skipReady = t > 24;
+  }
+
+  function skipFinale() {
+    const t = finale.t;
+    if (t < FIN.POWER_END) {
+      applyFinaleTime(FIN.POWER_END);
+      return;
+    }
+    if (t < FIN.SAVED_END) {
+      applyFinaleTime(FIN.FADE_END);
+      return;
+    }
+    if (t < FIN.EARTH_END) {
+      // Jump to the planted, earth-up hold, or on to credits if already there
+      if (t < FIN.PLANT_END + 40) applyFinaleTime(FIN.PLANT_END + 50);
+      else applyFinaleTime(FIN.EARTH_END + FIN.CREDITS_FADE + 2);
+      return;
+    }
+    if (!finale.showPrompt) {
+      applyFinaleTime(FIN.EARTH_END + FIN.CREDITS_FADE + 900);
+      return;
+    }
+    endingParked = false;
+    wantedLevel = 1;
+    startGame();
+  }
+
+  function updateFinale(opt) {
+    const silent = opt && opt.silent;
+    applyFinaleTime(finale.t + 1);
+    if (finale.parked && finale.t % 80 === 40) {
+      player.frontSV = 1.2;
+      player.rearSV = 0.9;
+    }
+    player.frontSV += -0.28 * player.frontS;
+    player.rearSV += -0.28 * player.rearS;
+    player.frontSV *= 0.82;
+    player.rearSV *= 0.82;
+    player.frontS += player.frontSV;
+    player.rearS += player.rearSV;
+    if (!silent && finale.skipReady && storyAdvancePressed()) skipFinale();
+  }
+
+  function drawBigEarth(g, cx, cy, r) {
+    r = Math.max(8, Math.round(r));
+    // atmosphere
+    fillCircle(g, cx, cy, r + 3, "#8ab0e8");
+    fillCircle(g, cx, cy, r + 1, "#3a6aaa");
+    fillCircle(g, cx, cy, r, "#1a3a78");
+    fillCircle(g, cx, cy, r - 1, "#2a5aaa");
+    // continents and caps, scaled from the tiny ending Earth
+    const s = r / 6;
+    const blob = (ox, oy, rad, col) => {
+      fillCircle(g, Math.round(cx + ox * s), Math.round(cy + oy * s), Math.max(1, Math.round(rad * s)), col);
+    };
+    blob(-2.0, -1.8, 2.2, "#3a8a58");
+    blob(1.2, 0.4, 1.9, "#2e7a48");
+    blob(-2.6, 1.4, 1.5, "#3a8a58");
+    blob(2.0, 2.2, 1.3, "#4a9a60");
+    blob(0.2, 1.8, 1.1, "#3a8a58");
+    blob(-0.6, -3.0, 1.0, "#2e7a48");
+    // polar caps + thin clouds
+    const cap = (ox, oy, w, h, col) => {
+      fillRect(g, Math.round(cx + ox * s), Math.round(cy + oy * s), Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)), col);
+    };
+    cap(-1.6, -4.6, 3.2, 1.0, "#d8e8f4");
+    cap(-1.0, 3.8, 2.6, 0.8, "#d8e8f4");
+    cap(1.8, -2.6, 1.6, 0.5, "#d8e8f4");
+    cap(-3.0, 2.2, 1.8, 0.5, "#d8e8f4");
+    // terminator shade on the right
+    g.save();
+    g.beginPath();
+    g.arc(cx, cy, r, -Math.PI * 0.45, Math.PI * 0.45);
+    g.lineTo(cx, cy);
+    g.closePath();
+    g.fillStyle = "rgba(0,0,20,0.28)";
+    g.fill();
+    g.restore();
+  }
+
+  function outpostWindowLit(i) {
+    if (finale.lit > i) return true;
+    if (!finale.flicker) return false;
+    // Occasional dying flicker in still-dark windows
+    return ((frame + i * 13) % 23 === 0) && ((frame + i) % 5 < 2);
+  }
+
+  function drawAstronautInWindow(g, wx, wy, wave) {
+    // Tiny figure, white suit against a darker cabin so the wave reads
+    fillRect(g, wx + 1, wy, 3, 3, "#101018"); // helmet
+    fillRect(g, wx + 1, wy + 1, 3, 1, "#3ad0e8"); // visor
+    fillRect(g, wx + 1, wy + 3, 3, 2, "#f4f4f0"); // torso
+    fillRect(g, wx + 1, wy + 5, 1, 2, "#d0d0cc");
+    fillRect(g, wx + 3, wy + 5, 1, 2, "#d0d0cc");
+    if (wave) {
+      fillRect(g, wx + 4, wy + 1, 3, 1, "#f4f4f0"); // arm up
+      fillRect(g, wx + 6, wy, 1, 1, "#d0d0cc");
+    } else {
+      fillRect(g, wx + 4, wy + 3, 1, 2, "#f4f4f0");
+    }
+  }
+
+  function drawOutpost(g, x, groundY) {
+    const cx = x + 40;
+    const domeR = 36;
+    const domeCy = groundY - 40;
+    const habTop = groundY - 28;
+    const G = {
+      hi: "#6a7078",
+      lit: "#4a4e54",
+      base: "#3a3d42",
+      lo: "#2c2f34",
+      shade: "#1c1e22",
+      seam: "#25282c",
+      pad: "#4a4e54",
+      dark: "#0a0b0d"
+    };
+
+    // landing pad
+    fillRect(g, x - 8, groundY - 2, 96, 2, G.pad);
+    fillRect(g, x - 8, groundY - 2, 96, 1, G.hi);
+    fillRect(g, x - 10, groundY, 100, 1, "rgba(0,0,0,0.4)");
+
+    // hab block under the dome
+    fillRect(g, x + 4, habTop, 72, groundY - 2 - habTop, G.base);
+    fillRect(g, x + 4, habTop, 12, groundY - 2 - habTop, G.lit);
+    fillRect(g, x + 64, habTop, 12, groundY - 2 - habTop, G.lo);
+    fillRect(g, x + 70, habTop, 6, groundY - 2 - habTop, G.shade);
+    fillRect(g, x + 4, habTop, 72, 1, G.hi);
+    // seams
+    fillRect(g, x + 5, habTop + 8, 70, 1, G.seam);
+    fillRect(g, x + 5, habTop + 16, 70, 1, G.seam);
+    // airlock
+    fillRect(g, cx - 7, groundY - 16, 14, 14, G.shade);
+    fillRect(g, cx - 6, groundY - 15, 12, 12, G.dark);
+    fillRect(g, cx - 6, groundY - 15, 12, 1, G.lo);
+    fillRect(g, cx - 1, groundY - 12, 2, 6, G.lit);
+    // cable socket on the left wall
+    fillRect(g, x + 1, groundY - 18, 6, 8, G.shade);
+    fillRect(g, x + 2, groundY - 17, 4, 6, G.dark);
+    fillRect(g, x + 3, groundY - 16, 2, 4, finale.cableT >= 1 ? "#7ec8d8" : "#2a2c30");
+
+    // dome — stacked rows for a hemisphere
+    for (let dy = -domeR; dy <= 6; dy++) {
+      const t = dy / domeR;
+      const hw = Math.round(Math.sqrt(Math.max(0, 1 - t * t)) * domeR);
+      const y = domeCy + dy;
+      fillRect(g, cx - hw, y, hw * 2, 1, G.base);
+      const litW = Math.max(1, Math.round(hw * 0.45));
+      fillRect(g, cx - hw, y, litW, 1, G.lit);
+      const shW = Math.max(1, Math.round(hw * 0.35));
+      fillRect(g, cx + hw - shW, y, shW, 1, G.lo);
+      fillRect(g, cx - hw, y, 1, 1, G.hi);
+    }
+    // dome ring
+    fillRect(g, x + 2, habTop - 2, 76, 3, G.lo);
+    fillRect(g, x + 2, habTop - 2, 76, 1, G.hi);
+
+    // antenna + dish
+    fillRect(g, cx, groundY - 86, 1, 14, "#8a9098");
+    fillRect(g, cx - 4, groundY - 86, 9, 2, "#6a7078");
+    fillRect(g, cx - 3, groundY - 88, 7, 2, "#4a4e54");
+    fillRect(g, cx - 1, groundY - 89, 3, 1, G.hi);
+    if (finale.lit >= 4 && (frame % 24 < 12)) fillRect(g, cx, groundY - 91, 1, 1, "#e05040");
+
+    // windows: 4 in the dome, 1 in the hab
+    const wins = [
+      { x: cx - 20, y: domeCy - 14, w: 11, h: 9 },
+      { x: cx + 6, y: domeCy - 14, w: 11, h: 9 },
+      { x: cx - 22, y: domeCy + 0, w: 11, h: 9 },
+      { x: cx + 8, y: domeCy + 0, w: 11, h: 9 },
+      { x: cx + 16, y: habTop + 6, w: 10, h: 8 }
+    ];
+    for (let i = 0; i < wins.length; i++) {
+      const w = wins[i];
+      const on = outpostWindowLit(i);
+      fillRect(g, w.x - 1, w.y - 1, w.w + 2, w.h + 2, G.shade);
+      fillRect(g, w.x, w.y, w.w, w.h, on ? "#5a3a08" : "#0c0e10");
+      if (on) {
+        fillRect(g, w.x, w.y, w.w, 1, "#f0c040");
+        fillRect(g, w.x, w.y + w.h - 2, w.w, 2, "#c88820");
+        fillRect(g, w.x, w.y, 1, w.h, "#e0a030");
+      }
+      // astronauts wave in the first three lit dome windows
+      if (on && i < 3 && finale.lit > i) {
+        const wave = Math.floor(frame / 10 + i) % 2 === 0;
+        drawAstronautInWindow(g, w.x + 1, w.y, wave);
+      }
+    }
+  }
+
+  function cablePoints() {
+    const x0 = finale.truckX + S(58) - 2;
+    const y0 = GROUND_Y - 8;
+    const x1 = FIN_OUTPOST_X + 4;
+    const y1 = GROUND_Y - 14;
+    return { x0, y0, x1, y1 };
+  }
+
+  function drawPowerCable(g) {
+    if (finale.cableT <= 0.02) return;
+    const { x0, y0, x1, y1 } = cablePoints();
+    const cx = x0 + (x1 - x0) * 0.5;
+    const cy = Math.max(y0, y1) + 10; // sag
+    const steps = 24;
+    const tMax = finale.cableT;
+    g.strokeStyle = "#3a3e44";
+    g.lineWidth = 2;
+    g.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * tMax;
+      const mt = 1 - t;
+      const x = mt * mt * x0 + 2 * mt * t * cx + t * t * x1;
+      const y = mt * mt * y0 + 2 * mt * t * cy + t * t * y1;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.strokeStyle = "#6a7078";
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * tMax;
+      const mt = 1 - t;
+      const x = mt * mt * x0 + 2 * mt * t * cx + t * t * x1;
+      const y = mt * mt * y0 + 2 * mt * t * cy + t * t * y1 - 1;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.lineWidth = 1;
+    // plug at the far end once extended
+    if (tMax > 0.92) {
+      fillRect(g, x1 - 3, y1 - 3, 6, 6, "#2c3036");
+      fillRect(g, x1 - 2, y1 - 2, 4, 4, finale.pulse || finale.lit > 0 ? "#7ec8d8" : "#4a4e54");
+    }
+    if (finale.pulse || finale.lit > 0) {
+      for (let k = 0; k < 3; k++) {
+        let p = ((finale.t * 0.03) + k / 3) % 1;
+        p = Math.min(p, tMax);
+        const mt = 1 - p;
+        const x = mt * mt * x0 + 2 * mt * p * cx + p * p * x1;
+        const y = mt * mt * y0 + 2 * mt * p * cy + p * p * y1;
+        fillRect(g, Math.round(x) - 1, Math.round(y) - 1, 3, 3, k === 0 ? "#d8f2ff" : "#7ec8d8");
+      }
+    }
+  }
+
+  function drawFinaleTruck(g, sx, groundY) {
+    if (!finaleTruckCanvas) {
+      finaleTruckCanvas = document.createElement("canvas");
+      finaleTruckCanvas.width = S(110);
+      finaleTruckCanvas.height = S(36);
+    }
+    const cnv = finaleTruckCanvas;
+    const og = cnv.getContext("2d");
+    og.imageSmoothingEnabled = false;
+    og.clearRect(0, 0, S(110), S(36));
+    drawCybertruck(og, 4, S(34), {
+      air: 0,
+      frontS: player.frontS,
+      rearS: player.rearS,
+      pitch: 0,
+      muzzle: 0,
+      onGround: false
+    });
+    g.imageSmoothingEnabled = false;
+    const dw = S(58), dh = S(20);
+    g.drawImage(cnv, 0, 0, S(110), S(36), Math.round(sx), groundY - dh, dw, dh);
+  }
+
+  function drawCraterRim(g) {
+    // Far lunar mounds, slightly lower so the Earth can crest them
+    fillPoly(g, [[-10, 142], [50, 128], [110, 136], [170, 122], [240, 134], [310, 124], [400, 132], [400, 180], [-10, 180]], PAL_L3.far);
+    fillPoly(g, [[-10, 150], [40, 140], [100, 148], [180, 136], [260, 146], [340, 138], [400, 146], [400, 180], [-10, 180]], PAL_L3.mid);
+    // Ridge the truck sits on (left) dropping into a crater bowl (center-right)
+    fillPoly(g, [
+      [-10, 168], [30, 160], [90, 162], [140, 168],
+      [190, 186], [250, 198], [320, 190], [400, 196],
+      [400, IH + 4], [-10, IH + 4]
+    ], MOON_GROUND[3]);
+    fillPoly(g, [
+      [-10, 168], [30, 160], [90, 162], [140, 168],
+      [170, 176], [140, 168], [90, 162], [30, 160], [-10, 168]
+    ], MOON_GROUND[0]);
+    // lip highlight along the left ridge
+    g.strokeStyle = MOON_LIP;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(-10, 168);
+    g.lineTo(30, 160);
+    g.lineTo(90, 162);
+    g.lineTo(140, 168);
+    g.lineTo(190, 186);
+    g.stroke();
+    // shallow dust in the bowl
+    fillCircle(g, 250, 198, 10, MOON_GROUND[4]);
+    fillCircle(g, 310, 200, 7, MOON_GROUND[4]);
+    fillCircle(g, 200, 188, 5, MOON_GROUND[4]);
+  }
+
+  function drawFinaleOutpostScene(g) {
+    drawStars(g);
+    drawLunarHills(g);
+    drawLunarGround(g);
+    drawOutpost(g, FIN_OUTPOST_X, GROUND_Y);
+    drawFinaleTruck(g, finale.truckX, GROUND_Y);
+    drawPowerCable(g);
+    if (finale.showSaved) {
+      const col = (frame % 40 < 26) ? C.warning : C.hud;
+      drawTextShadow(g, "OUTPOST SAVED!", IW / 2, 28, col, 2, "center", "#101018");
+    }
+  }
+
+  function drawFinaleEarthriseScene(g) {
+    drawStars(g);
+    drawBigEarth(g, 210, Math.round(finale.earthY), 36);
+    drawCraterRim(g);
+    drawFinaleTruck(g, FIN_TRUCK_PARK, GROUND_Y);
+    if (finale.optVisible) {
+      const walking = finale.optWalk > 0;
+      drawOptimus(g, Math.round(finale.optX), GROUND_Y, { walk: walking ? finale.optWalk : 0 });
+      if (finale.flagPlanted) {
+        const wave = Math.floor(frame / 10) % 3;
+        drawFlag(g, Math.round(finale.optX) + 13, GROUND_Y - 36, wave);
+      }
+    }
+  }
+
+  function drawFinaleCredits(g) {
+    drawStars(g);
+    const lines = finaleCreditLines();
+    let y = finale.creditY;
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      if (y > -20 && y < IH + 4) {
+        drawTextShadow(g, ln.text, IW / 2, Math.round(y), ln.color, ln.scale, "center", "#101018");
+      }
+      y += 8 * ln.scale + ln.gap;
+    }
+    if (finale.showPrompt) {
+      const enterCol = (frame % 40 < 22) ? C.warning : C.hud;
+      drawTextShadow(g, isPhone ? "TAP TO PLAY AGAIN" : "PRESS ENTER TO PLAY AGAIN", IW / 2, 190, enterCol, 1, "center", "#101018");
+    }
+  }
+
+  function drawFinale(g) {
+    fillRect(g, -8, -8, IW + 16, IH + 16, "#000000");
+    if (finale.scene === "credits") {
+      drawFinaleCredits(g);
+    } else if (finale.scene === "earthrise") {
+      drawFinaleEarthriseScene(g);
+    } else {
+      drawFinaleOutpostScene(g);
+    }
+    if (finale.fade > 0.02) {
+      g.fillStyle = "rgba(0,0,0," + Math.min(1, finale.fade) + ")";
+      g.fillRect(0, 0, IW, IH);
+    }
+    if (finale.skipReady && !finale.showSaved && !finale.showPrompt && finale.scene !== "credits") {
+      const sy = finale.scene === "earthrise" ? 8 : 200;
+      drawText(g, isPhone ? "TAP TO SKIP" : "PRESS ENTER TO SKIP", IW / 2, sy, C.hudDim, 1, "center");
+    }
+  }
+
   function drawEndingScene(g) {
+    if (level === 3) {
+      drawFinale(g);
+      return;
+    }
     fillRect(g, -8, -8, IW + 16, IH + 16, "#000000");
     drawStars(g);
     drawEndingEarth(g, 78, 88);
@@ -2895,22 +3442,17 @@
     const wave = Math.floor(frame / 10) % 3;
     drawFlag(g, optX + 13, GROUND_Y - 36, wave);
 
-    if (level === 3) drawEndingTruck(g, endingCarX, GROUND_Y);
-    else drawEndingRoadster(g, endingCarX, GROUND_Y);
+    drawEndingRoadster(g, endingCarX, GROUND_Y);
 
     if (endingTimer > 96) {
-      const headline = level === 3
-        ? "CONGRATULATIONS, THE OUTPOST IS OURS!"
-        : "CONGRATULATIONS, YOU'VE REACHED THE SHIP!";
-      const tag = level === 3 ? "MISSION COMPLETE" : "YOU WIN";
-      drawTextShadow(g, headline, 132, 6, C.hud, 1, "center", "#101018");
-      drawTextShadow(g, tag, 132, 18, C.warning, 2, "center", "#101018");
+      drawTextShadow(g, "CONGRATULATIONS, YOU'VE REACHED THE SHIP!", 132, 6, C.hud, 1, "center", "#101018");
+      drawTextShadow(g, "YOU WIN", 132, 18, C.warning, 2, "center", "#101018");
       drawText(g, "SCORE " + String(Math.floor(score)).padStart(6, "0"), 132, 38, C.accent, 1, "center");
       const enterCol = (frame % 40 < 22) ? C.warning : C.hud;
       drawTextShadow(g, isPhone ? "TAP TO PLAY AGAIN" : "PRESS ENTER TO PLAY AGAIN", 132, 50, enterCol, 1, "center", "#101018");
     }
     if (endingTimer > 118) {
-      drawSpeechBubble(g, optX - 18, GROUND_Y - 74, level === 3 ? "OUTPOST SECURE!" : "CONGRATULATIONS!");
+      drawSpeechBubble(g, optX - 18, GROUND_Y - 74, "CONGRATULATIONS!");
     }
   }
 
@@ -3914,8 +4456,8 @@
   }
 
   function startEnding() {
-    // Keep Level 3 so the finale can show the dark truck and moon copy.
     // Hidden E / ?ending=1 still uses the classic Level 2 roadster arrival.
+    // Level 3 plays the outpost-rescue / earthrise finale instead.
     if (level !== 3) level = 2;
     mode = "win";
     endingTimer = 0;
@@ -3929,6 +4471,7 @@
     player.frontS = 0;
     player.rearS = 0;
     hintTimer = 0;
+    if (level === 3) resetFinale();
     SFX.ensure();
     SFX.win();
   }
@@ -3995,32 +4538,36 @@
         startGame();
       }
     } else if (mode === "win") {
-      endingTimer++;
-      if (!endingParked) {
-        endingCarX += 1.15;
-        if (endingCarX >= 92) {
-          endingCarX = 92;
-          endingParked = true;
-          player.speed = 0.4;
+      if (level === 3) {
+        updateFinale();
+      } else {
+        endingTimer++;
+        if (!endingParked) {
+          endingCarX += 1.15;
+          if (endingCarX >= 92) {
+            endingCarX = 92;
+            endingParked = true;
+            player.speed = 0.4;
+          }
+        } else if (endingTimer % 80 === 40) {
+          player.frontSV = 1.4;
+          player.rearSV = 1.0;
         }
-      } else if (endingTimer % 80 === 40) {
-        player.frontSV = 1.4;
-        player.rearSV = 1.0;
-      }
-      // light suspension bob on the parked (or rolling) roadster
-      player.frontSV += -0.28 * player.frontS;
-      player.rearSV += -0.28 * player.rearS;
-      player.frontSV *= 0.82;
-      player.rearSV *= 0.82;
-      player.frontS += player.frontSV;
-      player.rearS += player.rearSV;
-      if (input.startPress || input.jumpPress) {
-        endingParked = false;
-        wantedLevel = 1;
-        startGame();
+        // light suspension bob on the parked (or rolling) roadster
+        player.frontSV += -0.28 * player.frontS;
+        player.rearSV += -0.28 * player.rearS;
+        player.frontSV *= 0.82;
+        player.rearSV *= 0.82;
+        player.frontS += player.frontSV;
+        player.rearS += player.rearSV;
+        if (input.startPress || input.jumpPress) {
+          endingParked = false;
+          wantedLevel = 1;
+          startGame();
+        }
       }
     }
-    SFX.setPlaying(mode === "playing" || mode === "levelintro" || mode === "title" || mode === "arrival" || mode === "briefing" || mode === "cutscene");
+    SFX.setPlaying(mode === "playing" || mode === "levelintro" || mode === "title" || mode === "arrival" || mode === "briefing" || mode === "cutscene" || mode === "win");
     frame++;
   }
 
